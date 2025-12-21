@@ -2,10 +2,10 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  MessageSquare, 
-  Settings, 
-  Trash2, 
+import {
+  MessageSquare,
+  Settings,
+  Trash2,
   MoreVertical,
   Zap,
   Building2,
@@ -34,6 +34,7 @@ interface ChatbotCardProps {
   onDelete?: (id: string) => void;
   onToggleStatus?: (id: string, currentStatus: string) => void;
   isTogglingStatus?: boolean;
+  children?: React.ReactNode;
 }
 
 const statusConfig = {
@@ -61,6 +62,7 @@ const ChatbotCard = ({
   onDelete,
   onToggleStatus,
   isTogglingStatus,
+  children,
 }: ChatbotCardProps) => {
   const navigate = useNavigate();
   const statusInfo = statusConfig[status];
@@ -78,7 +80,7 @@ const ChatbotCard = ({
   return (
     <Card className="group relative overflow-hidden border border-border/50 bg-card hover:shadow-lg hover:border-primary/20 transition-all duration-300">
       <div className="absolute inset-0 gradient-primary opacity-0 group-hover:opacity-[0.02] transition-opacity duration-300 pointer-events-none" />
-      
+
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary">
@@ -90,10 +92,9 @@ const ChatbotCard = ({
             </h3>
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="outline" className={statusInfo.className}>
-                <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${
-                  status === "connected" ? "bg-success animate-pulse-soft" : 
+                <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${status === "connected" ? "bg-success animate-pulse-soft" :
                   status === "pending" ? "bg-warning" : "bg-destructive"
-                }`} />
+                  }`} />
                 {statusInfo.label}
               </Badge>
             </div>
@@ -111,7 +112,7 @@ const ChatbotCard = ({
               <Settings className="h-4 w-4 mr-2" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={() => onDelete?.(id)}
               className="text-destructive focus:text-destructive"
             >
@@ -170,9 +171,9 @@ const ChatbotCard = ({
         </div>
 
         <div className="flex gap-2 pt-2">
-          <Button 
+          <Button
             variant={isRunning ? "destructive" : "default"}
-            size="sm" 
+            size="sm"
             className="flex-1"
             onClick={() => onToggleStatus?.(id, status)}
             disabled={isTogglingStatus}
@@ -191,18 +192,27 @@ const ChatbotCard = ({
               </>
             )}
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             className="flex-1"
             onClick={handleConfigure}
           >
             <Settings className="h-4 w-4 mr-1" />
             Configure
           </Button>
+          Configure
+        </Button>
+      </div>
+
+      {/* Extra Actions */}
+      {children && (
+        <div className="pt-2 border-t border-border/50">
+          {children}
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </CardContent>
+    </Card >
   );
 };
 
