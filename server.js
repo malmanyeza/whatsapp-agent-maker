@@ -279,7 +279,8 @@ app.post('/webhook', handleWebhookPost);
 app.post('/', handleWebhookPost);
 
 // Express 5 requires proper regex or named parameters for wildcards
-app.get('/(.*)', (req, res) => {
+// Using a RegExp object avoids string parsing issues with path-to-regexp
+app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
