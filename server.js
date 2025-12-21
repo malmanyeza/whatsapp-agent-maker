@@ -129,6 +129,26 @@ Your goal is to answer customer questions professionally based on the above info
 ${chatbot.system_instructions || ""}
 `;
 
+        // --- NEW: Fetch Conversation History ---
+        const { data: historyData } = await supabase
+            .from('messages')
+            .select('role:direction, content, created_at')
+            .eq('chatbot_id', chatbot.id)
+            .eq('whatsapp_user_phone', senderPhone)
+            .order('created_at', { ascending: false })
+            .limit(10); // Remember last 10 messages
+
+        let conversationHistory = [];
+        if (historyData) {
+            // Reverse to chronological order (oldest first)
+            conversationHistory = historyData.reverse().map(msg => ({
+                role: msg.role === 'incoming' ? 'user' : 'assistant',
+                content: msg.content
+            }));
+        }
+
+        console.log(`[DEBUG] Loaded ${conversationHistory.length} previous messages for context.`);
+
         // 1. Call AI
         console.log("[DEBUG] Sending request to OpenAI...");
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -141,6 +161,7 @@ ${chatbot.system_instructions || ""}
                 model: chatbot.model || 'gpt-4o',
                 messages: [
                     { role: 'system', content: systemContext },
+                    ...conversationHistory, // Inject History
                     { role: 'user', content: userMessage }
                 ]
             })
