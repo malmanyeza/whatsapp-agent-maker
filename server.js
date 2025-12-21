@@ -266,6 +266,17 @@ const handleWebhookPost = async (req, res) => {
 
                         console.log(`[DEBUG] Received Webhook for Phone ID: ${phoneNumberId}`);
 
+                        // DEBUG: List all chatbots to see what's actually in the DB
+                        const { data: allBots, error: listError } = await supabase
+                            .from('chatbots')
+                            .select('company_name, whatsapp_phone_number_id');
+
+                        if (listError) {
+                            console.error("[DEBUG] CRITICAL: Could not list chatbots. Is your SUPABASE_SERVICE_ROLE_KEY correct?", listError);
+                        } else {
+                            console.log("[DEBUG] Available Chatbots in DB:", JSON.stringify(allBots, null, 2));
+                        }
+
                         // Fetch Config
                         const { data: chatbot, error: dbError } = await supabase
                             .from('chatbots')
