@@ -149,7 +149,41 @@ ${chatbot.system_instructions || ""}
 
         console.log(`[DEBUG] Loaded ${conversationHistory.length} previous messages for context.`);
 
-        // 1. Call AI
+        // 1. Define Tools
+        const tools = [
+            {
+                type: "function",
+                function: {
+                    name: "generate_quote",
+                    description: "Generate a PDF quotation for the customer when they explicitly ask for one. Always ask for the customer's name first if you don't know it.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            customerName: {
+                                type: "string",
+                                description: "The name of the customer."
+                            },
+                            items: {
+                                type: "array",
+                                description: "List of items to include in the quote.",
+                                items: {
+                                    type: "object",
+                                    properties: {
+                                        name: { type: "string", description: "Name of the product/service" },
+                                        qty: { type: "integer", description: "Quantity" },
+                                        price: { type: "number", description: "Unit Price (infer from services_offered context)" }
+                                    },
+                                    required: ["name", "qty", "price"]
+                                }
+                            }
+                        },
+                        required: ["customerName", "items"]
+                    }
+                }
+            }
+        ];
+
+        // 2. Call AI with Tools
         console.log("[DEBUG] Sending request to OpenAI...");
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -161,9 +195,11 @@ ${chatbot.system_instructions || ""}
                 model: chatbot.model || 'gpt-4o',
                 messages: [
                     { role: 'system', content: systemContext },
-                    ...conversationHistory, // Inject History
+                    ...conversationHistory,
                     { role: 'user', content: userMessage }
-                ]
+                ],
+                tools: tools,
+                tool_choice: "auto"
             })
         });
 
@@ -175,15 +211,36 @@ ${chatbot.system_instructions || ""}
             return;
         }
 
-        const reply = data.choices?.[0]?.message?.content;
-        console.log(`[DEBUG] OpenAI Reply: "${reply}"`);
+        const choice = data.choices?.[0];
+        const reply = choice?.message?.content;
+        const toolCalls = choice?.message?.tool_calls;
 
-        // 2. Send Text Response
-        if (reply) {
-            console.log("[DEBUG] Sending reply to WhatsApp...");
+        // 3. Handle Tool Calls
+        if (toolCalls && toolCalls.length > 0) {
+            console.log(`[DEBUG] AI chose to use tools: ${toolCalls.length}`);
+
+            for (const toolCall of toolCalls) {
+                if (toolCall.function.name === 'generate_quote') {
+                    const args = JSON.parse(toolCall.function.arguments);
+                    console.log(`[DEBUG] Generating Quote for: ${args.customerName}`);
+
+                    await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "📄 *Generating your quotation...* Please wait a moment.");
+
+                    try {
+                        const pdfUrl = await handleGenerateQuote(args, chatbot, senderPhone);
+                        await sendWhatsAppPDF(phoneNumberId, chatbot.access_token, senderPhone, pdfUrl);
+                        await logOutgoing(chatbot.id, `[System] Generated Quote: ${pdfUrl}`, senderPhone);
+                    } catch (err) {
+                        console.error("[DEBUG] PDF Generation Error:", err);
+                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "Sorry, I encountered an error creating the PDF. Please try again.");
+                    }
+                }
+            }
+        } else if (reply) {
+            // Normal Text Reply
+            console.log(`[DEBUG] OpenAI Reply: "${reply}"`);
             await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, reply);
             await logOutgoing(chatbot.id, reply, senderPhone);
-            console.log("[DEBUG] Reply sent successfully.");
         }
 
     } catch (e) {
