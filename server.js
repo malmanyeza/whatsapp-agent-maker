@@ -45,16 +45,46 @@ async function uploadPDF(pdfBuffer, fileName) {
 }
 
 // --- Utility: Get Products Tool Handler ---
-async function handleGetProducts(chatbotId) {
+// --- Utility: Get Products Tool Handler ---
+async function handleGetProducts(chatbot) {
+    // 1. External API (Priority)
+    if (chatbot.external_product_api_url) {
+        console.log(`[DEBUG] Fetching products from External API: ${chatbot.external_product_api_url}`);
+        try {
+            const headers = {};
+            if (chatbot.external_product_api_key) {
+                headers['Authorization'] = chatbot.external_product_api_key;
+            }
+
+            const response = await fetch(chatbot.external_product_api_url, { headers });
+            if (!response.ok) throw new Error(`API returned ${response.status}`);
+
+            const data = await response.json();
+            // Expecting array of { name, price, description }
+            return JSON.stringify(data);
+        } catch (err) {
+            console.error("[DEBUG] External Product API Failed:", err);
+            // Fallback to internal DB? Or just report error?
+            // Let's fallback to internal DB as a safety net if the API is down but data exists locally.
+            console.log("[DEBUG] Falling back to internal database...");
+        }
+    }
+
+    // 2. Internal Database (Fallback / Default)
     const { data, error } = await supabase
         .from('products')
         .select('name, description, unit_price, currency')
-        .eq('chatbot_id', chatbotId);
+        .eq('chatbot_id', chatbot.id);
 
     if (error) return "Error fetching products.";
-    if (!data || data.length === 0) return "No products found in the database. Please ask the administrator to add products.";
+    if (!data || data.length === 0) return "No products found. Please ask the admin to check the product list.";
 
-    return JSON.stringify(data);
+    return JSON.stringify(data.map(p => ({
+        name: p.name,
+        description: p.description,
+        price: p.unit_price,
+        currency: p.currency
+    })));
 }
 
 // --- Utility: Generate Quote Tool Handler ---
@@ -186,6 +216,19 @@ ${chatbot.system_instructions || ""}
                         required: ["customerName", "items"]
                     }
                 }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "get_products",
+                    description: "Search for available products and their prices relative to the user's query. Use this to find out how much things cost.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            query: { type: "string", description: "Search query or category (optional)" }
+                        }
+                    }
+                }
             }
         ];
 
@@ -239,6 +282,44 @@ ${chatbot.system_instructions || ""}
                     } catch (err) {
                         console.error("[DEBUG] PDF Generation Error:", err);
                         await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "Sorry, I encountered an error creating the PDF. Please try again.");
+                    }
+                } else if (toolCall.function.name === 'get_products') {
+                    console.log(`[DEBUG] AI requesting product list...`);
+                    const productData = await handleGetProducts(chatbot);
+
+                    // Respond to OpenAI with the tool result (Implementation Note: In a real loop, we would send this back to OpenAI. 
+                    // For Simplicity in this one-shot architecture, we will append it to history and recall OpenAI, OR just send the data as context for the final answer.
+                    // The standard OpenAI flow requires a second call. Let's do a recursion or a simpler 2-step.)
+
+                    // --- 2-Step recursive call logic (simplified) ---
+                    // We need to call OpenAI again with the tool output.
+
+                    const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${chatbot.openai_api_key || process.env.OPENAI_API_KEY}`
+                        },
+                        body: JSON.stringify({
+                            model: chatbot.model || 'gpt-4o',
+                            messages: [
+                                { role: 'system', content: systemContext },
+                                ...conversationHistory,
+                                { role: 'user', content: userMessage },
+                                { role: 'assistant', content: null, tool_calls: toolCalls },
+                                { role: 'tool', tool_call_id: toolCall.id, name: 'get_products', content: productData }
+                            ],
+                            tools: tools
+                        })
+                    });
+
+                    const secondData = await secondResponse.json();
+                    const finalReply = secondData.choices?.[0]?.message?.content;
+
+                    if (finalReply) {
+                        console.log(`[DEBUG] OpenAI Final Reply (after tool): "${finalReply}"`);
+                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
+                        await logOutgoing(chatbot.id, finalReply, senderPhone);
                     }
                 }
             }

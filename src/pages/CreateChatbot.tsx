@@ -280,30 +280,64 @@ const CreateChatbot = () => {
       case 3:
         return (
           <div className="space-y-4">
-            <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 mb-4">
-              <p className="text-sm text-muted-foreground">
-                The OpenAI API key is managed via the Render dashboard for security.
-              </p>
-            </div>
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 mb-4">
+                <p className="text-sm text-muted-foreground">
+                  The OpenAI API key is managed via the Render dashboard for security.
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="model">AI Model *</Label>
-              <Select
-                value={formData.model}
-                onValueChange={(value) => handleChange("model", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a model" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gpt-4o-mini">GPT-4o Mini (Fast & Affordable)</SelectItem>
-                  <SelectItem value="gpt-4o">GPT-4o (Most Capable)</SelectItem>
-                  <SelectItem value="gpt-4-turbo">GPT-4 Turbo (Balanced)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                GPT-4o Mini is recommended for most use cases.
-              </p>
+              <div className="space-y-2">
+                <Label htmlFor="model">AI Model *</Label>
+                <Select
+                  value={formData.model}
+                  onValueChange={(value) => handleChange("model", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gpt-4o-mini">GPT-4o Mini (Fast & Affordable)</SelectItem>
+                    <SelectItem value="gpt-4o">GPT-4o (Most Capable)</SelectItem>
+                    <SelectItem value="gpt-4-turbo">GPT-4 Turbo (Balanced)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  GPT-4o Mini is recommended for most use cases.
+                </p>
+              </div>
+
+              {/* External Data Source */}
+              <div className="pt-4 border-t border-border mt-4">
+                <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <span className="bg-primary/10 p-1 rounded"><Bot className="h-3 w-3 text-primary" /></span>
+                  Product Data Integration
+                </h3>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="external_product_api_url">External Product API URL (Optional)</Label>
+                    <Input
+                      id="external_product_api_url"
+                      placeholder="https://api.yourcompany.com/products"
+                      value={(formData as any).external_product_api_url || ""}
+                      onChange={(e) => handleChange("external_product_api_url", e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      If provided, the AI will fetch pricing from this API. If empty, it uses the manual product list.
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="external_product_api_key">API Key / Header (Optional)</Label>
+                    <Input
+                      id="external_product_api_key"
+                      type="password"
+                      placeholder="Authorization Bearer token..."
+                      value={(formData as any).external_product_api_key || ""}
+                      onChange={(e) => handleChange("external_product_api_key", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -437,10 +471,10 @@ Always be polite, professional, and helpful..."
                 type="button"
                 onClick={() => setCurrentStep(step.id)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${currentStep === step.id
-                    ? "bg-primary text-primary-foreground shadow-md"
-                    : currentStep > step.id
-                      ? "bg-primary/10 text-primary"
-                      : "bg-secondary text-muted-foreground"
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : currentStep > step.id
+                    ? "bg-primary/10 text-primary"
+                    : "bg-secondary text-muted-foreground"
                   }`}
               >
                 <step.icon className="h-4 w-4" />

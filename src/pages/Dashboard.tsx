@@ -5,7 +5,7 @@ import ChatbotCard from "@/components/dashboard/ChatbotCard";
 import EmptyState from "@/components/dashboard/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Loader2 } from "lucide-react";
+import { Plus, Search, Loader2, ShoppingBag } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useChatbots } from "@/hooks/useChatbots";
 import { useState } from "react";
@@ -75,7 +75,7 @@ const Dashboard = () => {
               Manage and monitor your AI-powered WhatsApp assistants
             </p>
           </div>
-          
+
           <Button variant="gradient" asChild>
             <Link to="/create">
               <Plus className="h-5 w-5" />
@@ -105,7 +105,7 @@ const Dashboard = () => {
                   className="animate-slide-up"
                   style={{ animationDelay: `${index * 100}ms` }}
                 >
-                  <ChatbotCard 
+                  <ChatbotCard
                     id={bot.id}
                     companyName={bot.company_name}
                     description={bot.company_description}
@@ -115,7 +115,13 @@ const Dashboard = () => {
                     onDelete={handleDelete}
                     onToggleStatus={handleToggleStatus}
                     isTogglingStatus={togglingId === bot.id}
-                  />
+                  >
+                    <Button variant="outline" size="sm" className="w-full mt-2" asChild>
+                      <Link to={`/products/${bot.id}`}>
+                        <ShoppingBag className="mr-2 h-3 w-3" /> Manage Inventory
+                      </Link>
+                    </Button>
+                  </ChatbotCard>
                 </div>
               ))}
             </div>

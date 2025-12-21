@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import CreateChatbot from "./pages/CreateChatbot";
+import Products from "./pages/Products";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/create" element={<CreateChatbot />} />
             <Route path="/edit/:id" element={<CreateChatbot />} />
+            <Route path="/products/:chatbotId" element={<Products />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
