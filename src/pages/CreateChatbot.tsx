@@ -11,12 +11,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useChatbots, CreateChatbotData } from "@/hooks/useChatbots";
-import { 
-  Building2, 
-  MessageSquare, 
-  Key, 
-  Bot, 
-  ArrowLeft, 
+import {
+  Building2,
+  MessageSquare,
+  Key,
+  Bot,
+  ArrowLeft,
   ArrowRight,
   Loader2,
   Eye,
@@ -202,7 +202,7 @@ const CreateChatbot = () => {
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 mb-4">
               <p className="text-sm text-muted-foreground">
-                You'll need a WhatsApp Business account and Meta Developer credentials. 
+                You'll need a WhatsApp Business account and Meta Developer credentials.
                 These can be obtained from the Meta Developer Portal.
               </p>
             </div>
@@ -282,32 +282,8 @@ const CreateChatbot = () => {
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 mb-4">
               <p className="text-sm text-muted-foreground">
-                Your OpenAI API key is used to power the AI conversations. 
-                Get one from the OpenAI Platform.
+                The OpenAI API key is managed via the Render dashboard for security.
               </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="openai_api_key">OpenAI API Key *</Label>
-              <div className="relative">
-                <Input
-                  id="openai_api_key"
-                  type={showSecrets.openai_api_key ? "text" : "password"}
-                  placeholder="sk-..."
-                  value={formData.openai_api_key}
-                  onChange={(e) => handleChange("openai_api_key", e.target.value)}
-                  required
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8"
-                  onClick={() => toggleSecret("openai_api_key")}
-                >
-                  {showSecrets.openai_api_key ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
             </div>
 
             <div className="space-y-2">
@@ -374,7 +350,7 @@ Always be polite, professional, and helpful..."
 
             <div className="space-y-3">
               <Label>Allowed Actions</Label>
-              
+
               <div className="flex items-center space-x-3">
                 <Checkbox
                   id="answerQuestions"
@@ -444,7 +420,7 @@ Always be polite, professional, and helpful..."
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Dashboard
           </Button>
-          
+
           <h1 className="font-heading text-3xl font-bold text-foreground">
             {isEditing ? "Edit Chatbot" : "Create New Chatbot"}
           </h1>
@@ -460,21 +436,19 @@ Always be polite, professional, and helpful..."
               <button
                 type="button"
                 onClick={() => setCurrentStep(step.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                  currentStep === step.id
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${currentStep === step.id
                     ? "bg-primary text-primary-foreground shadow-md"
                     : currentStep > step.id
-                    ? "bg-primary/10 text-primary"
-                    : "bg-secondary text-muted-foreground"
-                }`}
+                      ? "bg-primary/10 text-primary"
+                      : "bg-secondary text-muted-foreground"
+                  }`}
               >
                 <step.icon className="h-4 w-4" />
                 <span className="hidden sm:inline text-sm font-medium">{step.title}</span>
               </button>
               {index < steps.length - 1 && (
-                <div className={`w-8 lg:w-16 h-0.5 mx-2 ${
-                  currentStep > step.id ? "bg-primary" : "bg-border"
-                }`} />
+                <div className={`w-8 lg:w-16 h-0.5 mx-2 ${currentStep > step.id ? "bg-primary" : "bg-border"
+                  }`} />
               )}
             </div>
           ))}
@@ -497,7 +471,7 @@ Always be polite, professional, and helpful..."
               {currentStep === 4 && "Customize your assistant's behavior"}
             </CardDescription>
           </CardHeader>
-          
+
           <CardContent>
             <form onSubmit={handleSubmit}>
               {renderStep()}
