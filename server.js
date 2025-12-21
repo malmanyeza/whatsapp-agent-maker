@@ -63,9 +63,15 @@ async function handleGenerateQuote(args, chatbot, customerPhone) {
 
     let total = 0;
     const cleanItems = args.items.map(item => {
-        const t = item.price * item.qty;
+        const t = (item.price || 0) * (item.qty || 0); // Safety check
         total += t;
-        return { ...item, total: t };
+        return {
+            name: item.name,
+            description: item.description || "",
+            qty: item.qty,
+            unit_price: item.price, // Map 'price' to 'unit_price' for PDF generator
+            total: t
+        };
     });
 
     // 2. Generate PDF
