@@ -60,9 +60,6 @@ async function handleGetProducts(chatbotId) {
 // --- Utility: Generate Quote Tool Handler ---
 async function handleGenerateQuote(args, chatbot, customerPhone) {
     // args: { items: [{ name, qty }], customerName }
-    // 1. Validate Items against DB (Optional but recommended, relying on AI for now with DB context)
-    // For simplicity, we trust the AI populated prices from the previous get_products call, 
-    // BUT meant to be robust: let's recalculate totals.
 
     let total = 0;
     const cleanItems = args.items.map(item => {
@@ -109,14 +106,18 @@ async function processMessage(message, phoneNumberId, chatbot) {
         const userMessage = message.text.body;
         const senderPhone = message.from;
 
-        // Log Incoming
-        await supabase.from('messages').insert({
+        console.log(`[DEBUG] Processing message from ${senderPhone}: "${userMessage}"`);
+
+        // Log Incoming to DB
+        const { error: logError } = await supabase.from('messages').insert({
             chatbot_id: chatbot.id,
             content: userMessage,
             direction: 'incoming',
             status: 'received',
             whatsapp_user_phone: senderPhone
         });
+
+        if (logError) console.error("[DEBUG] Failed to log incoming message to DB:", logError);
 
         // Context Construction
         const systemContext = `
@@ -128,7 +129,8 @@ Your goal is to answer customer questions professionally based on the above info
 ${chatbot.system_instructions || ""}
 `;
 
-        // 1. Call AI (Simple Chat Mode - No Tools for now)
+        // 1. Call AI
+        console.log("[DEBUG] Sending request to OpenAI...");
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -147,35 +149,49 @@ ${chatbot.system_instructions || ""}
         const data = await response.json();
 
         if (data.error) {
-            console.error("AI Error", data.error);
+            console.error("[DEBUG] OpenAI API Error:", JSON.stringify(data.error));
+            await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "I'm having trouble thinking right now. Please try again later.");
             return;
         }
 
         const reply = data.choices?.[0]?.message?.content;
+        console.log(`[DEBUG] OpenAI Reply: "${reply}"`);
 
         // 2. Send Text Response
         if (reply) {
+            console.log("[DEBUG] Sending reply to WhatsApp...");
             await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, reply);
             await logOutgoing(chatbot.id, reply, senderPhone);
+            console.log("[DEBUG] Reply sent successfully.");
         }
 
     } catch (e) {
-        console.error("Processing Error:", e);
-        // await logError(...)
+        console.error("[DEBUG] Processing Error:", e);
     }
 }
 
 // --- WhatsApp Helpers ---
 async function sendWhatsAppText(phoneId, token, to, text) {
-    await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to: to,
-            text: { body: text }
-        })
-    });
+    try {
+        const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                to: to,
+                text: { body: text }
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            console.error("[DEBUG] WhatsApp Send Error:", JSON.stringify(data.error));
+        } else {
+            console.log(`[DEBUG] WhatsApp Message Sent. ID: ${data.messages?.[0]?.id}`);
+        }
+    } catch (e) {
+        console.error("[DEBUG] WhatsApp Fetch Error:", e);
+    }
 }
 
 async function sendWhatsAppPDF(phoneId, token, to, link) {
@@ -204,7 +220,6 @@ async function logOutgoing(chatbotId, content, phone) {
     });
 }
 
-// --- Routes ---
 // --- Routes ---
 const verifyWebhook = (req, res) => {
     const mode = req.query['hub.mode'];
@@ -238,7 +253,6 @@ const handleWebhookPost = async (req, res) => {
     try {
         const body = req.body;
         console.log(`Webhook received ${new Date().toISOString()}`);
-        console.log(JSON.stringify(body, null, 2));
 
         if (body.object === 'whatsapp_business_account') {
             const entries = body.entry || [];
@@ -250,20 +264,29 @@ const handleWebhookPost = async (req, res) => {
                         const metadata = value.metadata;
                         const phoneNumberId = metadata?.phone_number_id;
 
+                        console.log(`[DEBUG] Received Webhook for Phone ID: ${phoneNumberId}`);
+
                         // Fetch Config
-                        const { data: chatbot } = await supabase
+                        const { data: chatbot, error: dbError } = await supabase
                             .from('chatbots')
                             .select('*')
                             .eq('whatsapp_phone_number_id', phoneNumberId)
-                            .single();
+                            .maybeSingle();
+
+                        if (dbError) {
+                            console.error("[DEBUG] Database Error:", dbError);
+                        }
 
                         if (chatbot) {
+                            console.log(`[DEBUG] Chatbot "${chatbot.company_name}" found.`);
                             for (const msg of value.messages) {
                                 if (msg.type === 'text') {
-                                    // Fire and forget (awaiting inside ensures order but doesn't block response)
                                     await processMessage(msg, phoneNumberId, chatbot);
                                 }
                             }
+                        } else {
+                            console.warn(`[DEBUG] No chatbot found in DB for ID: ${phoneNumberId}`);
+                            console.warn(`[ACTION] Go to your App -> Create Chatbot -> Enter Phone Number ID: ${phoneNumberId}`);
                         }
                     }
                 }
