@@ -278,7 +278,8 @@ app.post('/webhook', handleWebhookPost);
 // Also listen on root for POST to match the simple test app if desired
 app.post('/', handleWebhookPost);
 
-app.get('*', (req, res) => {
+// Express 5 requires proper regex or named parameters for wildcards
+app.get('/(.*)', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
