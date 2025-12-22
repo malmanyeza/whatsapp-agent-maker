@@ -45,46 +45,83 @@ async function uploadPDF(pdfBuffer, fileName) {
 }
 
 // --- Utility: Get Products Tool Handler ---
-// --- Utility: Get Products Tool Handler ---
 async function handleGetProducts(chatbot) {
     // 1. External API (Priority)
     if (chatbot.external_product_api_url) {
         console.log(`[DEBUG] Fetching products from External API: ${chatbot.external_product_api_url}`);
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
             const headers = {};
             if (chatbot.external_product_api_key) {
                 headers['Authorization'] = chatbot.external_product_api_key;
             }
 
-            const response = await fetch(chatbot.external_product_api_url, { headers });
-            if (!response.ok) throw new Error(`API returned ${response.status}`);
+            const response = await fetch(chatbot.external_product_api_url, {
+                headers,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
 
-            const data = await response.json();
-            // Expecting array of { name, price, description }
-            return JSON.stringify(data);
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`[DEBUG] External API success.`);
+                return JSON.stringify(data).substring(0, 5000); // Limit context
+            } else {
+                console.error(`[DEBUG] External API Failed: ${response.status}`);
+            }
         } catch (err) {
-            console.error("[DEBUG] External Product API Failed:", err);
-            // Fallback to internal DB? Or just report error?
-            // Let's fallback to internal DB as a safety net if the API is down but data exists locally.
-            console.log("[DEBUG] Falling back to internal database...");
+            console.error("[DEBUG] External API Error:", err.message);
         }
     }
 
-    // 2. Internal Database (Fallback / Default)
-    const { data, error } = await supabase
+    // 2. Internal Database Fallback
+    console.log(`[DEBUG] Fetching products from Supabase...`);
+    const { data: dbProducts, error } = await supabase
         .from('products')
-        .select('name, description, unit_price, currency')
-        .eq('chatbot_id', chatbot.id);
+        .select('name, description, unit_price, currency, qty')
+        .eq('chatbot_id', chatbot.id)
+        .limit(30);
 
-    if (error) return "Error fetching products.";
-    if (!data || data.length === 0) return "No products found. Please ask the admin to check the product list.";
+    if (error) {
+        console.error("[DEBUG] Supabase Product Fetch Error:", error);
+        return "Error fetching products. Please ask user to contact sales.";
+    }
 
-    return JSON.stringify(data.map(p => ({
-        name: p.name,
-        description: p.description,
-        price: p.unit_price,
-        currency: p.currency
-    })));
+    if (dbProducts && dbProducts.length > 0) {
+        console.log(`[DEBUG] Found ${dbProducts.length} products in DB.`);
+        return JSON.stringify(dbProducts);
+    }
+
+    return "No products found in inventory.";
+}
+const data = await response.json();
+// Expecting array of { name, price, description }
+return JSON.stringify(data);
+        } catch (err) {
+    console.error("[DEBUG] External Product API Failed:", err);
+    // Fallback to internal DB? Or just report error?
+    // Let's fallback to internal DB as a safety net if the API is down but data exists locally.
+    console.log("[DEBUG] Falling back to internal database...");
+}
+    }
+
+// 2. Internal Database (Fallback / Default)
+const { data, error } = await supabase
+    .from('products')
+    .select('name, description, unit_price, currency')
+    .eq('chatbot_id', chatbot.id);
+
+if (error) return "Error fetching products.";
+if (!data || data.length === 0) return "No products found. Please ask the admin to check the product list.";
+
+return JSON.stringify(data.map(p => ({
+    name: p.name,
+    description: p.description,
+    price: p.unit_price,
+    currency: p.currency
+})));
 }
 
 // --- Utility: Generate Quote Tool Handler ---
@@ -145,6 +182,10 @@ async function processMessage(message, phoneNumberId, chatbot) {
     try {
         const userMessage = message.text.body;
         const senderPhone = message.from;
+        const messageId = message.id;
+
+        // 1. Mark as Read (Blue Ticks) - gives immediate feedback
+        await sendWhatsAppReadStatus(phoneNumberId, chatbot.access_token, messageId);
 
         console.log(`[DEBUG] Processing message from ${senderPhone}: "${userMessage}"`);
 
@@ -303,50 +344,85 @@ ${chatbot.system_instructions || ""}
                     // The standard OpenAI flow requires a second call. Let's do a recursion or a simpler 2-step.)
 
                     // --- 2-Step recursive call logic (simplified) ---
-                    // We need to call OpenAI again with the tool output.
+                    try {
+                        console.log("[DEBUG] Calling OpenAI with tool results...");
+                        const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${chatbot.openai_api_key || process.env.OPENAI_API_KEY}`
+                            },
+                            body: JSON.stringify({
+                                model: chatbot.model || 'gpt-4o-mini', // Ensure consistent model
+                                messages: [
+                                    { role: 'system', content: systemContext },
+                                    ...conversationHistory,
+                                    { role: 'user', content: userMessage },
+                                    { role: 'assistant', content: null, tool_calls: toolCalls },
+                                    { role: 'tool', tool_call_id: toolCall.id, name: 'get_products', content: productData }
+                                ],
+                                // tools: tools // Optional: Do we allow recursive tools? Maybe safe to omit for now to prevent loops
+                            })
+                        });
 
-                    const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${chatbot.openai_api_key || process.env.OPENAI_API_KEY}`
-                        },
-                        body: JSON.stringify({
-                            model: chatbot.model || 'gpt-4o',
-                            messages: [
-                                { role: 'system', content: systemContext },
-                                ...conversationHistory,
-                                { role: 'user', content: userMessage },
-                                { role: 'assistant', content: null, tool_calls: toolCalls },
-                                { role: 'tool', tool_call_id: toolCall.id, name: 'get_products', content: productData }
-                            ],
-                            tools: tools
-                        })
-                    });
-
-                    const secondData = await secondResponse.json();
-                    const finalReply = secondData.choices?.[0]?.message?.content;
-
-                    if (finalReply) {
-                        console.log(`[DEBUG] OpenAI Final Reply (after tool): "${finalReply}"`);
-                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
-                        await logOutgoing(chatbot.id, finalReply, senderPhone);
+                        const secondData = await secondResponse.json();
+                        if (secondData.error) {
+                            console.error("[DEBUG] OpenAI (Round 2) Error:", secondData.error);
+                            await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "I'm having trouble analyzing the product data. Please try asking again.");
+                        } else {
+                            const finalReply = secondData.choices?.[0]?.message?.content;
+                            if (finalReply) {
+                                console.log(`[DEBUG] OpenAI Final Reply: "${finalReply}"`);
+                                await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
+                                await logOutgoing(chatbot.id, finalReply, senderPhone);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("[DEBUG] Error in Secondary OpenAI Call:", e);
+                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "Oops, something went wrong while thinking. Please try again.");
                     }
                 }
             }
-        } else if (reply) {
-            // Normal Text Reply
-            console.log(`[DEBUG] OpenAI Reply: "${reply}"`);
-            await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, reply);
-            await logOutgoing(chatbot.id, reply, senderPhone);
+
+            const secondData = await secondResponse.json();
+            const finalReply = secondData.choices?.[0]?.message?.content;
+
+            if (finalReply) {
+                console.log(`[DEBUG] OpenAI Final Reply (after tool): "${finalReply}"`);
+                await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
+                await logOutgoing(chatbot.id, finalReply, senderPhone);
+            }
         }
+    }
+        } else if (reply) {
+    // Normal Text Reply
+    console.log(`[DEBUG] OpenAI Reply: "${reply}"`);
+    await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, reply);
+    await logOutgoing(chatbot.id, reply, senderPhone);
+}
 
     } catch (e) {
-        console.error("[DEBUG] Processing Error:", e);
-    }
+    console.error("[DEBUG] Processing Error:", e);
+}
 }
 
 // --- WhatsApp Helpers ---
+async function sendWhatsAppReadStatus(phoneId, token, messageId) {
+    try {
+        await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                status: 'read',
+                message_id: messageId
+            })
+        });
+    } catch (e) {
+        // Ignore read receipt errors
+    }
+}
+
 async function sendWhatsAppText(phoneId, token, to, text) {
     try {
         const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
