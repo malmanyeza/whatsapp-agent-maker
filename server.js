@@ -161,8 +161,12 @@ async function processMessage(message, phoneNumberId, chatbot) {
     try {
         const userMessage = message.text.body;
         const senderPhone = message.from;
+        const messageId = message.id; // Get Message ID
 
         console.log(`[DEBUG] Processing message from ${senderPhone}: "${userMessage}"`);
+
+        // 0. Mark as Read (Blue Ticks) - UX Enhancement
+        markMessageAsRead(phoneNumberId, chatbot.access_token, messageId);
 
         // 1. Log Incoming to DB (FIRE AND FORGET - Don't await)
         supabase.from('messages').insert({
@@ -370,6 +374,22 @@ ${chatbot.system_instructions || ""}
 }
 
 // --- WhatsApp Helpers ---
+async function markMessageAsRead(phoneId, token, messageId) {
+    try {
+        await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                status: 'read',
+                message_id: messageId
+            })
+        });
+    } catch (e) {
+        console.error("[DEBUG] Mark Read Error:", e.message);
+    }
+}
+
 async function sendWhatsAppText(phoneId, token, to, text) {
     try {
         const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
