@@ -31,6 +31,7 @@ export interface Chatbot {
 export interface CreateChatbotData {
   company_name: string;
   company_description: string;
+  logo_url?: string;
   services_offered: string;
   whatsapp_phone_number_id: string;
   meta_app_id: string;
