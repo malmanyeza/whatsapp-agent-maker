@@ -695,7 +695,8 @@ app.post('/api/sync-profile', async (req, res) => {
                 // A. Download Image
                 const imgRes = await fetch(logoUrl);
                 if (!imgRes.ok) throw new Error("Failed to download logo");
-                const imgBuffer = await imgRes.buffer();
+                const arrayBuffer = await imgRes.arrayBuffer();
+                const imgBuffer = Buffer.from(arrayBuffer);
                 const fileSize = imgBuffer.length;
 
                 // B. Start Upload Session
