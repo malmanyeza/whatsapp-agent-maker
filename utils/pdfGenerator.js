@@ -6,25 +6,48 @@ import path from 'path';
 
 /**
  * Generates a PDF Quote and returns the Buffer
- * @param {Object} quoteData - { company: { name, address, phone }, customer: { name }, items: [ { name, qty, price, total } ], total, currencySymbol }
+ * @param {Object} quoteData - { company: { name, address, phone, logo_url }, customer: { name }, items: [ { name, qty, price, total } ], total, currencySymbol }
  * @returns {Promise<Buffer>}
  */
 export async function generatePDFQuote(quoteData) {
+    // 1. Fetch Logo first (Async)
+    let logoBuffer = null;
+    if (quoteData.company.logo_url) {
+        try {
+            console.log(`[DEBUG] Fetching logo from: ${quoteData.company.logo_url}`);
+            const response = await fetch(quoteData.company.logo_url);
+            if (response.ok) {
+                const arrayBuffer = await response.arrayBuffer();
+                logoBuffer = Buffer.from(arrayBuffer);
+            } else {
+                console.error(`[DEBUG] Failed to fetch logo. Status: ${response.status}`);
+            }
+        } catch (e) {
+            console.error("[DEBUG] Failed to load logo:", e);
+        }
+    }
+
+    // 2. Generate PDF (Sync logic wrapped in Promise)
     return new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument({ margin: 50 });
-            const buffers = [];
+            const chunks = [];
 
-            doc.on('data', buffers.push.bind(buffers));
-            doc.on('end', () => {
-                const pdfData = Buffer.concat(buffers);
-                resolve(pdfData);
-            });
+            doc.on('data', chunk => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+            doc.on('error', reject);
+
+            const hasLogo = !!logoBuffer;
 
             // --- Header ---
+            // If logo exists, shift text to the right
+            if (hasLogo) {
+                doc.image(logoBuffer, 50, 45, { width: 50 });
+            }
+
             doc
                 .fontSize(20)
-                .text(quoteData.company.name || 'Company Name', 110, 57)
+                .text(quoteData.company.name || 'Company Name', hasLogo ? 110 : 50, 57)
                 .fontSize(10)
                 .text(quoteData.company.name, 200, 65, { align: 'right' })
                 .text(quoteData.company.description || '', 200, 80, { align: 'right' })
@@ -87,86 +110,10 @@ export async function generatePDFQuote(quoteData) {
 
             // End Document
             doc.end();
-            // Ensure 'fetch' is available in the environment (e.g., Node.js 18+ or polyfill)
-            const response = await fetch(data.company.logo_url);
-            const arrayBuffer = await response.arrayBuffer();
-            const logoBuffer = Buffer.from(arrayBuffer);
-            doc.image(logoBuffer, 50, 45, { width: 50 });
-            doc.moveDown();
+
         } catch (e) {
-            console.error("Failed to load logo:", e);
-            // Optionally, continue without logo or re-throw
+            reject(e);
         }
-    }
-
-    doc
-            .fontSize(20)
-            .text("QUOTATION", { align: "right" })
-            .fontSize(10)
-            .text(data.company.name || 'Company Name', { align: "right" })
-            .text(data.company.description || '', { align: "right" })
-            .moveDown();
-
-    // --- Quote Details ---
-    doc
-        .fontSize(10)
-        .text(`Quote Number: ${uuidv4().split('-')[0].toUpperCase()}`, 50, 160) // Adjusted Y position
-        .text(`Date: ${new Date().toLocaleDateString()}`, 50, 175) // Adjusted Y position
-        .text(`To: ${data.customer.name || 'Valued Customer'}`, 300, 160) // Adjusted Y position
-        .moveDown();
-
-    // --- Table Header ---
-    const tableTop = 250; // Adjusted table top position
-    doc.font("Helvetica-Bold");
-    generateTableRow(
-        doc,
-        tableTop,
-        "Item",
-        "Description",
-        "Unit Cost",
-        "Quantity",
-        "Line Total"
-    );
-    generateHr(doc, tableTop + 20);
-    doc.font("Helvetica");
-
-    // --- Table Rows ---
-    let i = 0;
-    for (i = 0; i < data.items.length; i++) {
-        const item = data.items[i];
-        const position = tableTop + (i + 1) * 30;
-        generateTableRow(
-            doc,
-            position,
-            item.name,
-            item.description || "",
-            formatCurrency(item.unit_price, data.currencySymbol),
-            item.qty,
-            formatCurrency(item.total, data.currencySymbol)
-        );
-        generateHr(doc, position + 20);
-    }
-
-    // --- Footer / Total ---
-    const subtotalPosition = tableTop + (i + 1) * 30;
-    doc.font("Helvetica-Bold");
-    generateTableRow(
-        doc,
-        subtotalPosition,
-        "",
-        "",
-        "Total",
-        "",
-        formatCurrency(data.total, data.currencySymbol)
-    );
-
-    // End Document
-    doc.end();
-
-    return new Promise(resolve => {
-        doc.on('end', () => {
-            resolve(Buffer.concat(chunks));
-        });
     });
 }
 
@@ -190,5 +137,6 @@ function generateHr(doc, y) {
 }
 
 function formatCurrency(cents, symbol = '$') {
+    if (cents === undefined || cents === null) return symbol + "0.00";
     return symbol + (cents).toFixed(2);
 }
