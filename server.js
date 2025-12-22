@@ -689,56 +689,8 @@ app.post('/api/sync-profile', async (req, res) => {
             results.displayName = nameRes.ok ? "submitted" : `failed (${await nameRes.text()})`;
         }
 
-        // 3. Update Profile Picture using Resumable Upload API
-        if (logoUrl) {
-            try {
-                // A. Download Image
-                const imgRes = await fetch(logoUrl);
-                if (!imgRes.ok) throw new Error("Failed to download logo");
-                const arrayBuffer = await imgRes.arrayBuffer();
-                const imgBuffer = Buffer.from(arrayBuffer);
-                const fileSize = imgBuffer.length;
-
-                // B. Start Upload Session
-                const sessionUrl = `https://graph.facebook.com/v21.0/${process.env.META_APP_ID || chatbot.meta_app_id}/uploads?file_length=${fileSize}&file_type=image/png&access_token=${token}`;
-                const sessionRes = await fetch(sessionUrl, { method: 'POST' });
-
-                if (!sessionRes.ok) throw new Error(`Session Start Failed: ${await sessionRes.text()}`);
-                const sessionData = await sessionRes.json();
-                const uploadId = sessionData.id;
-
-                // C. Upload Content
-                const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${uploadId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'file_offset': '0'
-                    },
-                    body: imgBuffer
-                });
-
-                if (!uploadRes.ok) throw new Error(`Content Upload Failed: ${await uploadRes.text()}`);
-                const uploadData = await uploadRes.json();
-                const mediaHandle = uploadData.h; // 'h' is the handle!
-
-                // D. Update Profile Picture
-                const photoRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/whatsapp_business_profile`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({
-                        messaging_product: "whatsapp",
-                        profile_picture_url: null, // intentionally null
-                        profile_picture_handle: mediaHandle
-                    })
-                });
-
-                results.photo = photoRes.ok ? "success" : `failed (${await photoRes.text()})`;
-
-            } catch (err) {
-                console.error("Profile Photo Error:", err);
-                results.photo = `error (${err.message})`;
-            }
-        }
+        // 3. Update Profile Picture: SKIPPED (User manages this in WhatsApp Manager)
+        results.photo = "Use WhatsApp Manager to update logo";
 
         res.json({ success: true, results });
 
