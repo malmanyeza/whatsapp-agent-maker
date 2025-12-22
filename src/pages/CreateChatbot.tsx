@@ -59,6 +59,33 @@ const CreateChatbot = () => {
     }
   };
 
+  const handleSyncProfile = async () => {
+    if (!id) return;
+    setIsLoading(true);
+    try {
+      toast({ title: "Syncing Profile...", description: "Updating WhatsApp Business Profile on Meta..." });
+
+      const res = await fetch('/api/sync-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatbotId: id })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync Failed");
+
+      toast({
+        title: "Profile Synced!",
+        description: `Photo: ${data.results.photo}, Name: ${data.results.displayName}, About: ${data.results.about}`
+      });
+
+    } catch (error: any) {
+      toast({ title: "Sync Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     // ...
   };
