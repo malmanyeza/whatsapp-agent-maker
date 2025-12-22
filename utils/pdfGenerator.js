@@ -87,9 +87,86 @@ export async function generatePDFQuote(quoteData) {
 
             // End Document
             doc.end();
-        } catch (err) {
-            reject(err);
+            // Ensure 'fetch' is available in the environment (e.g., Node.js 18+ or polyfill)
+            const response = await fetch(data.company.logo_url);
+            const arrayBuffer = await response.arrayBuffer();
+            const logoBuffer = Buffer.from(arrayBuffer);
+            doc.image(logoBuffer, 50, 45, { width: 50 });
+            doc.moveDown();
+        } catch (e) {
+            console.error("Failed to load logo:", e);
+            // Optionally, continue without logo or re-throw
         }
+    }
+
+    doc
+            .fontSize(20)
+            .text("QUOTATION", { align: "right" })
+            .fontSize(10)
+            .text(data.company.name || 'Company Name', { align: "right" })
+            .text(data.company.description || '', { align: "right" })
+            .moveDown();
+
+    // --- Quote Details ---
+    doc
+        .fontSize(10)
+        .text(`Quote Number: ${uuidv4().split('-')[0].toUpperCase()}`, 50, 160) // Adjusted Y position
+        .text(`Date: ${new Date().toLocaleDateString()}`, 50, 175) // Adjusted Y position
+        .text(`To: ${data.customer.name || 'Valued Customer'}`, 300, 160) // Adjusted Y position
+        .moveDown();
+
+    // --- Table Header ---
+    const tableTop = 250; // Adjusted table top position
+    doc.font("Helvetica-Bold");
+    generateTableRow(
+        doc,
+        tableTop,
+        "Item",
+        "Description",
+        "Unit Cost",
+        "Quantity",
+        "Line Total"
+    );
+    generateHr(doc, tableTop + 20);
+    doc.font("Helvetica");
+
+    // --- Table Rows ---
+    let i = 0;
+    for (i = 0; i < data.items.length; i++) {
+        const item = data.items[i];
+        const position = tableTop + (i + 1) * 30;
+        generateTableRow(
+            doc,
+            position,
+            item.name,
+            item.description || "",
+            formatCurrency(item.unit_price, data.currencySymbol),
+            item.qty,
+            formatCurrency(item.total, data.currencySymbol)
+        );
+        generateHr(doc, position + 20);
+    }
+
+    // --- Footer / Total ---
+    const subtotalPosition = tableTop + (i + 1) * 30;
+    doc.font("Helvetica-Bold");
+    generateTableRow(
+        doc,
+        subtotalPosition,
+        "",
+        "",
+        "Total",
+        "",
+        formatCurrency(data.total, data.currencySymbol)
+    );
+
+    // End Document
+    doc.end();
+
+    return new Promise(resolve => {
+        doc.on('end', () => {
+            resolve(Buffer.concat(chunks));
+        });
     });
 }
 

@@ -105,10 +105,14 @@ async function handleGenerateQuote(args, chatbot, customerPhone) {
     });
 
     // 2. Generate PDF
+    const timestamp = new Date().toISOString().split('T')[0];
+    const safeCompanyName = chatbot.company_name.replace(/[^a-zA-Z0-9]/g, '_');
+
     const pdfBuffer = await generatePDFQuote({
         company: {
             name: chatbot.company_name,
-            description: chatbot.company_description
+            description: chatbot.company_description,
+            logo_url: chatbot.logo_url // Pass the logo URL
         },
         customer: {
             name: args.customerName || 'Valued Customer',
@@ -120,7 +124,7 @@ async function handleGenerateQuote(args, chatbot, customerPhone) {
     });
 
     // 3. Upload PDF
-    const fileName = `quote_${Date.now()}_${Math.floor(Math.random() * 1000)}.pdf`;
+    const fileName = `${safeCompanyName}_Quote_${timestamp}_${Math.floor(Math.random() * 1000)}.pdf`;
     const pdfUrl = await uploadPDF(pdfBuffer, fileName);
 
     // 4. Save to DB
@@ -162,6 +166,13 @@ Company Description: ${chatbot.company_description}
 Services/Products Offered: ${chatbot.services_offered}
 
 Your goal is to answer customer questions professionally based on the above information.
+
+IMPORTANT GUARDRAILS:
+1. You represent ${chatbot.company_name} ONLY. Do not discuss other companies, general knowledge, sports, politics, or religion.
+2. If a user asks about something unrelated to ${chatbot.company_name}'s products or services, politely decline and steer the conversation back to business.
+3. Example refusal: "I'm sorry, I can only assist with ${chatbot.company_name} products. Would you like to know about our services?"
+4. Never generate content that is racist, sexist, political, or offensive.
+
 ${chatbot.system_instructions || ""}
 `;
 
