@@ -46,39 +46,55 @@ async function uploadPDF(pdfBuffer, fileName) {
 
 // --- Utility: Get Products Tool Handler ---
 // --- Utility: Get Products Tool Handler ---
+// --- Utility: Get Products Tool Handler ---
 async function handleGetProducts(chatbot) {
     // 1. External API (Priority)
     if (chatbot.external_product_api_url) {
         console.log(`[DEBUG] Fetching products from External API: ${chatbot.external_product_api_url}`);
         try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000); // 5s Timeout
+
             const headers = {};
             if (chatbot.external_product_api_key) {
                 headers['Authorization'] = chatbot.external_product_api_key;
             }
 
-            const response = await fetch(chatbot.external_product_api_url, { headers });
+            const response = await fetch(chatbot.external_product_api_url, {
+                headers,
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+
             if (!response.ok) throw new Error(`API returned ${response.status}`);
 
             const data = await response.json();
-            // Expecting array of { name, price, description }
+            console.log(`[DEBUG] External API success. Items: ${Array.isArray(data) ? data.length : 'Unknown'}`);
             return JSON.stringify(data);
         } catch (err) {
-            console.error("[DEBUG] External Product API Failed:", err);
-            // Fallback to internal DB? Or just report error?
-            // Let's fallback to internal DB as a safety net if the API is down but data exists locally.
+            console.error("[DEBUG] External Product API Failed (or timed out):", err.message);
             console.log("[DEBUG] Falling back to internal database...");
         }
     }
 
     // 2. Internal Database (Fallback / Default)
+    console.log(`[DEBUG] Querying Supabase for products...`);
     const { data, error } = await supabase
         .from('products')
         .select('name, description, unit_price, currency')
         .eq('chatbot_id', chatbot.id);
 
-    if (error) return "Error fetching products.";
-    if (!data || data.length === 0) return "No products found. Please ask the admin to check the product list.";
+    if (error) {
+        console.error("[DEBUG] Supabase Product Look-up Error:", error);
+        return "Error fetching products from database.";
+    }
 
+    if (!data || data.length === 0) {
+        console.log("[DEBUG] No products found in DB.");
+        return "No products found. Please ask the admin to check the product list.";
+    }
+
+    console.log(`[DEBUG] Found ${data.length} products in DB.`);
     return JSON.stringify(data.map(p => ({
         name: p.name,
         description: p.description,
@@ -296,7 +312,14 @@ ${chatbot.system_instructions || ""}
                     }
                 } else if (toolCall.function.name === 'get_products') {
                     console.log(`[DEBUG] AI requesting product list...`);
-                    const productData = await handleGetProducts(chatbot);
+                    let productData = "[]";
+                    try {
+                        productData = await handleGetProducts(chatbot);
+                        console.log(`[DEBUG] Product Data Retrieved (Length: ${productData.length} chars)`);
+                    } catch (err) {
+                        console.error("[DEBUG] handleGetProducts crashed:", err);
+                        productData = "Error retrieving products.";
+                    }
 
                     // Respond to OpenAI with the tool result (Implementation Note: In a real loop, we would send this back to OpenAI. 
                     // For Simplicity in this one-shot architecture, we will append it to history and recall OpenAI, OR just send the data as context for the final answer.
