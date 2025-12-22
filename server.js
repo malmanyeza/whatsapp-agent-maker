@@ -148,16 +148,16 @@ async function processMessage(message, phoneNumberId, chatbot) {
 
         console.log(`[DEBUG] Processing message from ${senderPhone}: "${userMessage}"`);
 
-        // Log Incoming to DB
-        const { error: logError } = await supabase.from('messages').insert({
+        // 1. Log Incoming to DB (FIRE AND FORGET - Don't await)
+        supabase.from('messages').insert({
             chatbot_id: chatbot.id,
             content: userMessage,
             direction: 'incoming',
             status: 'received',
             whatsapp_user_phone: senderPhone
+        }).then(({ error }) => {
+            if (error) console.error("[DEBUG] Background Log Error:", error);
         });
-
-        if (logError) console.error("[DEBUG] Failed to log incoming message to DB:", logError);
 
         // Context Construction
         const systemContext = `
@@ -176,7 +176,7 @@ IMPORTANT GUARDRAILS:
 ${chatbot.system_instructions || ""}
 `;
 
-        // --- NEW: Fetch Conversation History ---
+        // 2. Fetch Conversation History (Await this as we need it)
         const { data: historyData } = await supabase
             .from('messages')
             .select('role:direction, content, created_at')
@@ -194,7 +194,7 @@ ${chatbot.system_instructions || ""}
             }));
         }
 
-        console.log(`[DEBUG] Loaded ${conversationHistory.length} previous messages for context.`);
+        console.log(`[DEBUG] Loaded ${conversationHistory.length} history items. Model: ${chatbot.model || 'gpt-4o-mini'}`);
 
         // 1. Define Tools
         const tools = [
