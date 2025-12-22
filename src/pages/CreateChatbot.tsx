@@ -23,6 +23,7 @@ import {
   EyeOff,
   Sparkles
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const CreateChatbot = () => {
   const navigate = useNavigate();

@@ -8,6 +8,7 @@ export interface Chatbot {
   user_id: string;
   company_name: string;
   company_description: string;
+  logo_url?: string;
   services_offered: string;
   whatsapp_phone_number_id: string;
   meta_app_id: string;
@@ -55,13 +56,13 @@ export const useChatbots = () => {
     queryKey: ["chatbots", user?.id],
     queryFn: async () => {
       if (!user) return [];
-      
+
       const { data, error } = await supabase
         .from("chatbots")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
-      
+
       if (error) throw error;
       return data as Chatbot[];
     },
@@ -71,7 +72,7 @@ export const useChatbots = () => {
   const createChatbot = useMutation({
     mutationFn: async (chatbotData: CreateChatbotData) => {
       if (!user) throw new Error("Not authenticated");
-      
+
       const { data, error } = await supabase
         .from("chatbots")
         .insert({
@@ -80,7 +81,7 @@ export const useChatbots = () => {
         })
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -103,7 +104,7 @@ export const useChatbots = () => {
   const updateChatbot = useMutation({
     mutationFn: async ({ id, ...chatbotData }: Partial<Chatbot> & { id: string }) => {
       if (!user) throw new Error("Not authenticated");
-      
+
       const { data, error } = await supabase
         .from("chatbots")
         .update(chatbotData)
@@ -111,7 +112,7 @@ export const useChatbots = () => {
         .eq("user_id", user.id)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -134,13 +135,13 @@ export const useChatbots = () => {
   const deleteChatbot = useMutation({
     mutationFn: async (id: string) => {
       if (!user) throw new Error("Not authenticated");
-      
+
       const { error } = await supabase
         .from("chatbots")
         .delete()
         .eq("id", id)
         .eq("user_id", user.id);
-      
+
       if (error) throw error;
     },
     onSuccess: () => {
@@ -162,9 +163,9 @@ export const useChatbots = () => {
   const toggleChatbotStatus = useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
       if (!user) throw new Error("Not authenticated");
-      
+
       const newStatus = currentStatus === "connected" ? "disconnected" : "connected";
-      
+
       const { data, error } = await supabase
         .from("chatbots")
         .update({ status: newStatus })
@@ -172,7 +173,7 @@ export const useChatbots = () => {
         .eq("user_id", user.id)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -180,7 +181,7 @@ export const useChatbots = () => {
       queryClient.invalidateQueries({ queryKey: ["chatbots"] });
       toast({
         title: data.status === "connected" ? "Bot started!" : "Bot stopped",
-        description: data.status === "connected" 
+        description: data.status === "connected"
           ? "Your chatbot is now active and listening for messages."
           : "Your chatbot has been paused.",
       });
@@ -196,14 +197,14 @@ export const useChatbots = () => {
 
   const getChatbot = async (id: string) => {
     if (!user) return null;
-    
+
     const { data, error } = await supabase
       .from("chatbots")
       .select("*")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
-    
+
     if (error) throw error;
     return data as Chatbot | null;
   };
