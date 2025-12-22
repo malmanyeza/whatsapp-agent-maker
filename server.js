@@ -642,6 +642,111 @@ const handleWebhookPost = async (req, res) => {
     }
 };
 
+app.post('/api/sync-profile', async (req, res) => {
+    const { chatbotId } = req.body;
+    console.log(`[DEBUG] Syncing Profile for Chatbot: ${chatbotId}`);
+
+    try {
+        const { data: chatbot, error } = await supabase
+            .from('chatbots')
+            .select('*')
+            .eq('id', chatbotId)
+            .single();
+
+        if (error || !chatbot) throw new Error("Chatbot not found");
+
+        const phoneId = chatbot.whatsapp_phone_number_id;
+        const token = chatbot.access_token;
+        const logoUrl = chatbot.logo_url;
+        const description = chatbot.company_description;
+        const companyName = chatbot.company_name;
+
+        const results = {
+            about: "skipped",
+            photo: "skipped",
+            displayName: "skipped"
+        };
+
+        // 1. Update "About" (Status)
+        if (description) {
+            const shortDesc = description.substring(0, 139);
+            const aboutRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/whatsapp_business_profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ messaging_product: "whatsapp", about: shortDesc })
+            });
+            results.about = aboutRes.ok ? "success" : `failed (${await aboutRes.text()})`;
+        }
+
+        // 2. Submit Display Name
+        if (companyName) {
+            // Note: This often requires 'business_management' permission and might fail if not verified.
+            const nameRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ messaging_product: "whatsapp", display_name: companyName })
+            });
+            results.displayName = nameRes.ok ? "submitted" : `failed (${await nameRes.text()})`;
+        }
+
+        // 3. Update Profile Picture using Resumable Upload API
+        if (logoUrl) {
+            try {
+                // A. Download Image
+                const imgRes = await fetch(logoUrl);
+                if (!imgRes.ok) throw new Error("Failed to download logo");
+                const imgBuffer = await imgRes.buffer();
+                const fileSize = imgBuffer.length;
+
+                // B. Start Upload Session
+                const sessionUrl = `https://graph.facebook.com/v21.0/${process.env.META_APP_ID || chatbot.meta_app_id}/uploads?file_length=${fileSize}&file_type=image/png&access_token=${token}`;
+                const sessionRes = await fetch(sessionUrl, { method: 'POST' });
+
+                if (!sessionRes.ok) throw new Error(`Session Start Failed: ${await sessionRes.text()}`);
+                const sessionData = await sessionRes.json();
+                const uploadId = sessionData.id;
+
+                // C. Upload Content
+                const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${uploadId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'file_offset': '0'
+                    },
+                    body: imgBuffer
+                });
+
+                if (!uploadRes.ok) throw new Error(`Content Upload Failed: ${await uploadRes.text()}`);
+                const uploadData = await uploadRes.json();
+                const mediaHandle = uploadData.h; // 'h' is the handle!
+
+                // D. Update Profile Picture
+                const photoRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/whatsapp_business_profile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({
+                        messaging_product: "whatsapp",
+                        profile_picture_url: null, // intentionally null
+                        profile_picture_handle: mediaHandle
+                    })
+                });
+
+                results.photo = photoRes.ok ? "success" : `failed (${await photoRes.text()})`;
+
+            } catch (err) {
+                console.error("Profile Photo Error:", err);
+                results.photo = `error (${err.message})`;
+            }
+        }
+
+        res.json({ success: true, results });
+
+    } catch (e) {
+        console.error("Sync Profile Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/webhook', handleWebhookPost);
 // Also listen on root for POST to match the simple test app if desired
 app.post('/', handleWebhookPost);
