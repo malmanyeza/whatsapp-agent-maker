@@ -40,18 +40,20 @@ export async function generatePDFQuote(quoteData) {
             const hasLogo = !!logoBuffer;
 
             // --- Header ---
-            // If logo exists, shift text to the right
+            // Center Logo (Page width ~612pts. Logo width 100. Center ~256)
             if (hasLogo) {
-                doc.image(logoBuffer, 50, 45, { width: 50 });
+                // Centered Image
+                doc.image(logoBuffer, (doc.page.width - 100) / 2, 45, { width: 100 });
+                doc.moveDown(4); // Move down past the logo
+            } else {
+                // Fallback if no logo: show text centered
+                doc
+                    .fontSize(20)
+                    .text(quoteData.company.name || 'Company Name', { align: 'center' })
+                    .fontSize(10)
+                    .text(quoteData.company.description || '', { align: 'center' })
+                    .moveDown();
             }
-
-            doc
-                .fontSize(20)
-                .text(quoteData.company.name || 'Company Name', hasLogo ? 110 : 50, 57)
-                .fontSize(10)
-                .text(quoteData.company.name, 200, 65, { align: 'right' })
-                .text(quoteData.company.description || '', 200, 80, { align: 'right' })
-                .moveDown();
 
             // --- Quote Details ---
             doc
