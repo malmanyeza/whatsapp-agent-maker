@@ -414,9 +414,6 @@ ${chatbot.system_instructions || ""}
         if (toolCalls && toolCalls.length > 0) {
             console.log(`[DEBUG] AI chose to use tools: ${toolCalls.length}`);
 
-            // A. Log this internal thought to DB so history is preserved (optional but good for debugging)
-            // await logOutgoing(chatbot.id, `[System] Calling tools: ${toolCalls.map(t => t.function.name).join(', ')}`, senderPhone);
-
             const toolOutputs = [];
 
             for (const toolCall of toolCalls) {
@@ -445,12 +442,13 @@ ${chatbot.system_instructions || ""}
                         console.log(`[DEBUG] AI requesting product list...`);
                         output = await handleGetProducts(chatbot);
                         console.log(`[DEBUG] Product Data Length: ${output.length} characters`);
+                        // Limit log output so we don't spam, but show structure
+                        console.log(`[DEBUG] Product Data Preview: ${output.substring(0, 100)}...`);
                     }
                 } catch (err) {
                     console.error(`[DEBUG] Tool execution failed (${fnName}):`, err);
                     output = JSON.stringify({ error: err.message });
 
-                    // Notify user of error only if it's a quote generation failure (since they expect a file)
                     if (fnName === 'generate_quote') {
                         await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "Sorry, I had trouble creating the quote document.");
                     }
@@ -465,39 +463,51 @@ ${chatbot.system_instructions || ""}
             }
 
             // 4. Submit Tool Outputs back to OpenAI
-            // We must append the Assistant's "Job Request" message AND the "Job Results" messages to the history
-            const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${chatbot.openai_api_key || process.env.OPENAI_API_KEY}`
-                },
-                body: JSON.stringify({
-                    model: chatbot.model || 'gpt-4o',
-                    messages: [
-                        { role: 'system', content: systemContext },
-                        ...conversationHistory,
-                        { role: 'user', content: userMessage },
-                        choice.message, // The Assistant message that contained 'tool_calls'
-                        ...toolOutputs  // The Tool Result messages
-                    ],
-                    tools: tools
-                })
-            });
+            console.log(`[DEBUG] Step 4: Submitting ${toolOutputs.length} tool outputs to OpenAI...`);
 
-            const secondData = await secondResponse.json();
+            try {
+                const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${chatbot.openai_api_key || process.env.OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: chatbot.model || 'gpt-4o',
+                        messages: [
+                            { role: 'system', content: systemContext },
+                            ...conversationHistory,
+                            { role: 'user', content: userMessage },
+                            choice.message,
+                            ...toolOutputs
+                        ],
+                        tools: tools
+                    })
+                });
 
-            if (secondData.error) {
-                console.error("[DEBUG] OpenAI (Second Step) Error:", secondData.error);
-                return;
-            }
+                console.log(`[DEBUG] Step 4.1: OpenAI Second Response Status: ${secondResponse.status}`);
+                const secondData = await secondResponse.json();
 
-            const finalReply = secondData.choices?.[0]?.message?.content;
+                if (secondData.error) {
+                    console.error("[DEBUG] OpenAI (Second Step) Error:", secondData.error);
+                    // Send error to user so they know it failed
+                    await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "My brain is tired (OpenAI Error). Please try again.");
+                    return;
+                }
 
-            if (finalReply) {
-                console.log(`[DEBUG] OpenAI Final Reply: "${finalReply}"`);
-                await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
-                await logOutgoing(chatbot.id, finalReply, senderPhone);
+                const finalReply = secondData.choices?.[0]?.message?.content;
+                console.log(`[DEBUG] Step 4.2: Final Reply Content (Length: ${finalReply ? finalReply.length : 0})`);
+
+                if (finalReply) {
+                    console.log(`[DEBUG] OpenAI Final Reply: "${finalReply}"`);
+                    await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
+                    await logOutgoing(chatbot.id, finalReply, senderPhone);
+                } else {
+                    console.warn("[DEBUG] Step 4.3: OpenAI returned no content in final reply.");
+                }
+
+            } catch (fetchErr) {
+                console.error("[DEBUG] Step 4 Fetch Crash:", fetchErr);
             }
 
         } else if (reply) {
