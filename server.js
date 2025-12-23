@@ -410,12 +410,25 @@ ${chatbot.system_instructions || ""}
         const reply = choice?.message?.content;
         const toolCalls = choice?.message?.tool_calls;
 
-        // 3. Handle Tool Calls
-        if (toolCalls && toolCalls.length > 0) {
-            console.log(`[DEBUG] AI chose to use tools: ${toolCalls.length}`);
+        // 3. Handle Tool Calls (Iterative Loop for Chained Calls)
+        let currentMessage = choice.message;
+        const allMessages = [
+            { role: 'system', content: systemContext },
+            ...conversationHistory,
+            { role: 'user', content: userMessage }
+        ];
+
+        let loopCount = 0;
+        const MAX_TOOL_LOOPS = 5; // Safety limit to prevent infinite loops
+
+        while (currentMessage?.tool_calls && loopCount < MAX_TOOL_LOOPS) {
+            loopCount++;
+            const toolCalls = currentMessage.tool_calls;
+            console.log(`[DEBUG] Tool Loop ${loopCount}: AI requesting ${toolCalls.length} tool(s)`);
 
             const toolOutputs = [];
 
+            // Execute all requested tools
             for (const toolCall of toolCalls) {
                 const fnName = toolCall.function.name;
                 const args = JSON.parse(toolCall.function.arguments);
@@ -425,13 +438,15 @@ ${chatbot.system_instructions || ""}
                     if (fnName === 'generate_quote') {
                         console.log(`[DEBUG] Generating Quote for: ${args.customerName}`);
 
-                        // Notify user something is happening
-                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "📄 *Generating your quotation...*");
+                        // Notify user (only on first PDF generation)
+                        if (loopCount === 1 || !toolOutputs.some(t => t.name === 'generate_quote')) {
+                            await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "📄 *Generating your quotation...*");
+                        }
 
                         // Execute
                         const pdfUrl = await handleGenerateQuote(args, chatbot, senderPhone);
 
-                        // Send PDF immediately (Good UX)
+                        // Send PDF immediately
                         await sendWhatsAppPDF(phoneNumberId, chatbot.access_token, senderPhone, pdfUrl);
                         await logOutgoing(chatbot.id, `[System] Generated Quote: ${pdfUrl}`, senderPhone);
 
@@ -439,11 +454,9 @@ ${chatbot.system_instructions || ""}
                         output = JSON.stringify({ success: true, pdfUrl: pdfUrl, message: "Quote generated and sent to user." });
 
                     } else if (fnName === 'get_products') {
-                        console.log(`[DEBUG] AI requesting product list...`);
+                        console.log(`[DEBUG] Fetching product list...`);
                         output = await handleGetProducts(chatbot);
                         console.log(`[DEBUG] Product Data Length: ${output.length} characters`);
-                        // Limit log output so we don't spam, but show structure
-                        console.log(`[DEBUG] Product Data Preview: ${output.substring(0, 100)}...`);
                     }
                 } catch (err) {
                     console.error(`[DEBUG] Tool execution failed (${fnName}):`, err);
@@ -462,11 +475,15 @@ ${chatbot.system_instructions || ""}
                 });
             }
 
-            // 4. Submit Tool Outputs back to OpenAI
-            console.log(`[DEBUG] Step 4: Submitting ${toolOutputs.length} tool outputs to OpenAI...`);
+            // Add assistant's tool request and tool outputs to message history
+            allMessages.push(currentMessage);
+            allMessages.push(...toolOutputs);
+
+            // Submit tool outputs back to OpenAI
+            console.log(`[DEBUG] Submitting ${toolOutputs.length} tool output(s) to OpenAI...`);
 
             try {
-                const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -474,57 +491,50 @@ ${chatbot.system_instructions || ""}
                     },
                     body: JSON.stringify({
                         model: chatbot.model || 'gpt-4o',
-                        messages: [
-                            { role: 'system', content: systemContext },
-                            ...conversationHistory,
-                            { role: 'user', content: userMessage },
-                            choice.message,
-                            ...toolOutputs
-                        ],
+                        messages: allMessages,
                         tools: tools
                     })
                 });
 
-                console.log(`[DEBUG] Step 4.1: OpenAI Second Response Status: ${secondResponse.status}`);
-                const secondData = await secondResponse.json();
+                console.log(`[DEBUG] OpenAI Response Status: ${response.status}`);
+                const responseData = await response.json();
 
-                if (secondData.error) {
-                    console.error("[DEBUG] OpenAI (Second Step) Error:", secondData.error);
-                    // Send error to user so they know it failed
+                if (responseData.error) {
+                    console.error("[DEBUG] OpenAI Error:", responseData.error);
                     await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "My brain is tired (OpenAI Error). Please try again.");
                     return;
                 }
 
-                const finalReply = secondData.choices?.[0]?.message?.content;
-                const finalMessage = secondData.choices?.[0]?.message;
+                currentMessage = responseData.choices?.[0]?.message;
 
-                console.log(`[DEBUG] Step 4.2: Final Reply Content Length: ${finalReply ? finalReply.length : 0}`);
-
-                if (finalReply) {
-                    console.log(`[DEBUG] OpenAI Final Reply: "${finalReply}"`);
-                    await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
-                    await logOutgoing(chatbot.id, finalReply, senderPhone);
+                // Check if we got a final text reply
+                if (currentMessage?.content) {
+                    console.log(`[DEBUG] Final Reply (after ${loopCount} loop(s)): "${currentMessage.content}"`);
+                    await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, currentMessage.content);
+                    await logOutgoing(chatbot.id, currentMessage.content, senderPhone);
+                    break; // Exit the loop
+                } else if (currentMessage?.tool_calls) {
+                    console.log(`[DEBUG] AI wants to call ${currentMessage.tool_calls.length} more tool(s)...`);
+                    // Loop continues
                 } else {
-                    console.warn("[DEBUG] Step 4.3: OpenAI returned no content.");
-                    console.log(`[DEBUG] Step 4.4 Full Message Object: ${JSON.stringify(finalMessage)}`);
-
-                    if (finalMessage?.tool_calls) {
-                        console.log(`[DEBUG] Step 4.5: OpenAI trying to call MORE tools: ${finalMessage.tool_calls.length}`);
-                        // Optional: For now, just tell the user we are done to avoid loops, or handle it.
-                        // Ideally we loop back, but for now let's see if this is the cause.
-                    }
-                    if (finalMessage?.refusal) {
-                        console.log(`[DEBUG] Step 4.6: OpenAI Refusal: ${finalMessage.refusal}`);
-                    }
+                    console.warn("[DEBUG] OpenAI returned neither content nor tool_calls. Exiting loop.");
+                    break;
                 }
 
             } catch (fetchErr) {
-                console.error("[DEBUG] Step 4 Fetch Crash:", fetchErr);
+                console.error("[DEBUG] Fetch Error:", fetchErr);
+                break;
             }
+        }
 
-        } else if (reply) {
-            // Normal Text Reply (No Tools)
-            console.log(`[DEBUG] OpenAI Reply: "${reply}"`);
+        if (loopCount >= MAX_TOOL_LOOPS) {
+            console.error(`[DEBUG] Reached MAX_TOOL_LOOPS (${MAX_TOOL_LOOPS}). Stopping to prevent infinite loop.`);
+            await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, "I got a bit carried away with my tools! Please try asking again.");
+        }
+
+        // If there was a direct reply (no tools)
+        if (!choice.message?.tool_calls && reply) {
+            console.log(`[DEBUG] Direct Reply: "${reply}"`);
             await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, reply);
             await logOutgoing(chatbot.id, reply, senderPhone);
         }
