@@ -450,8 +450,11 @@ ${chatbot.system_instructions || ""}
                         await sendWhatsAppPDF(phoneNumberId, chatbot.access_token, senderPhone, pdfUrl);
                         await logOutgoing(chatbot.id, `[System] Generated Quote: ${pdfUrl}`, senderPhone);
 
-                        // Tool Output for AI
-                        output = JSON.stringify({ success: true, pdfUrl: pdfUrl, message: "Quote generated and sent to user." });
+                        // Tool Output for AI - Don't mention the URL, just confirm and offer help
+                        output = JSON.stringify({
+                            success: true,
+                            message: "Quotation PDF has been successfully sent to the customer. Now politely ask if there's anything else you can help them with."
+                        });
 
                     } else if (fnName === 'get_products') {
                         console.log(`[DEBUG] Fetching product list...`);
