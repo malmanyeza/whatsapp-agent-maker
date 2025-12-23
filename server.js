@@ -496,14 +496,26 @@ ${chatbot.system_instructions || ""}
                 }
 
                 const finalReply = secondData.choices?.[0]?.message?.content;
-                console.log(`[DEBUG] Step 4.2: Final Reply Content (Length: ${finalReply ? finalReply.length : 0})`);
+                const finalMessage = secondData.choices?.[0]?.message;
+
+                console.log(`[DEBUG] Step 4.2: Final Reply Content Length: ${finalReply ? finalReply.length : 0}`);
 
                 if (finalReply) {
                     console.log(`[DEBUG] OpenAI Final Reply: "${finalReply}"`);
                     await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, finalReply);
                     await logOutgoing(chatbot.id, finalReply, senderPhone);
                 } else {
-                    console.warn("[DEBUG] Step 4.3: OpenAI returned no content in final reply.");
+                    console.warn("[DEBUG] Step 4.3: OpenAI returned no content.");
+                    console.log(`[DEBUG] Step 4.4 Full Message Object: ${JSON.stringify(finalMessage)}`);
+
+                    if (finalMessage?.tool_calls) {
+                        console.log(`[DEBUG] Step 4.5: OpenAI trying to call MORE tools: ${finalMessage.tool_calls.length}`);
+                        // Optional: For now, just tell the user we are done to avoid loops, or handle it.
+                        // Ideally we loop back, but for now let's see if this is the cause.
+                    }
+                    if (finalMessage?.refusal) {
+                        console.log(`[DEBUG] Step 4.6: OpenAI Refusal: ${finalMessage.refusal}`);
+                    }
                 }
 
             } catch (fetchErr) {
