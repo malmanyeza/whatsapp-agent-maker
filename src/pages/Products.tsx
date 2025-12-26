@@ -31,6 +31,7 @@ interface Product {
     description: string;
     unit_price: number;
     currency: string;
+    image_url?: string;
 }
 
 const Products = () => {
@@ -52,6 +53,7 @@ const Products = () => {
         unit_price: "",
         currency: "USD"
     });
+    const [imageFile, setImageFile] = useState<File | null>(null);
 
     useEffect(() => {
         fetchProducts();
@@ -82,6 +84,25 @@ const Products = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            let imageUrl = editingProduct?.image_url || null;
+
+            // Upload image if one was selected
+            if (imageFile) {
+                const fileName = `${chatbotId}/${Date.now()}_${imageFile.name}`;
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('product-images')
+                    .upload(fileName, imageFile);
+
+                if (uploadError) throw uploadError;
+
+                // Get public URL
+                const { data } = supabase.storage
+                    .from('product-images')
+                    .getPublicUrl(fileName);
+
+                imageUrl = data.publicUrl;
+            }
+
             if (editingProduct) {
                 const { error } = await supabase
                     .from('products')
@@ -89,7 +110,8 @@ const Products = () => {
                         name: formData.name,
                         description: formData.description,
                         unit_price: parseFloat(formData.unit_price),
-                        currency: formData.currency
+                        currency: formData.currency,
+                        image_url: imageUrl
                     })
                     .eq('id', editingProduct.id);
 
@@ -103,7 +125,8 @@ const Products = () => {
                         name: formData.name,
                         description: formData.description,
                         unit_price: parseFloat(formData.unit_price),
-                        currency: formData.currency
+                        currency: formData.currency,
+                        image_url: imageUrl
                     });
 
                 if (error) throw error;
@@ -133,6 +156,7 @@ const Products = () => {
 
     const resetForm = () => {
         setFormData({ name: "", description: "", unit_price: "", currency: "USD" });
+        setImageFile(null);
         setEditingProduct(null);
     };
 
@@ -214,6 +238,17 @@ const Products = () => {
                                         />
                                     </div>
                                 </div>
+                                <div className="space-y-2">
+                                    <Label>Product Image (optional)</Label>
+                                    <Input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={e => setImageFile(e.target.files?.[0] || null)}
+                                    />
+                                    {editingProduct?.image_url && !imageFile && (
+                                        <p className="text-sm text-muted-foreground">Current image will be kept unless you upload a new one</p>
+                                    )}
+                                </div>
                                 <Button type="submit" className="w-full">Save Product</Button>
                             </form>
                         </DialogContent>
@@ -234,6 +269,7 @@ const Products = () => {
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead>Image</TableHead>
                                 <TableHead>Name</TableHead>
                                 <TableHead>Description</TableHead>
                                 <TableHead>Price</TableHead>
@@ -256,6 +292,13 @@ const Products = () => {
                             ) : (
                                 filteredProducts.map(product => (
                                     <TableRow key={product.id}>
+                                        <TableCell>
+                                            {product.image_url ? (
+                                                <img src={product.image_url} alt={product.name} className="h-10 w-10 object-cover rounded" />
+                                            ) : (
+                                                <div className="h-10 w-10 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">No img</div>
+                                            )}
+                                        </TableCell>
                                         <TableCell className="font-medium">{product.name}</TableCell>
                                         <TableCell>{product.description}</TableCell>
                                         <TableCell>{product.currency} {product.unit_price}</TableCell>

@@ -375,6 +375,24 @@ ${chatbot.system_instructions || ""}
                         }
                     }
                 }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "send_product_images",
+                    description: "Send product images to the customer via WhatsApp. Use this when the customer asks to see pictures, images, or photos of specific products.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            product_names: {
+                                type: "array",
+                                items: { type: "string" },
+                                description: "List of product names to send images for"
+                            }
+                        },
+                        required: ["product_names"]
+                    }
+                }
             }
         ];
 
@@ -460,6 +478,65 @@ ${chatbot.system_instructions || ""}
                         console.log(`[DEBUG] Fetching product list...`);
                         output = await handleGetProducts(chatbot);
                         console.log(`[DEBUG] Product Data Length: ${output.length} characters`);
+
+                    } else if (fnName === 'send_product_images') {
+                        console.log(`[DEBUG] Sending product images for: ${args.product_names.join(', ')}`);
+
+                        try {
+                            // Query products by name
+                            const { data: products, error } = await supabase
+                                .from('products')
+                                .select('name, image_url')
+                                .eq('chatbot_id', chatbot.id)
+                                .in('name', args.product_names);
+
+                            if (error) {
+                                throw new Error(`Database error: ${error.message}`);
+                            }
+
+                            if (!products || products.length === 0) {
+                                output = JSON.stringify({
+                                    success: false,
+                                    message: "No products found with the requested names."
+                                });
+                            } else {
+                                // Filter products that have images
+                                const productsWithImages = products.filter(p => p.image_url);
+                                const productsWithoutImages = products.filter(p => !p.image_url);
+
+                                // Send images
+                                for (const product of productsWithImages) {
+                                    await sendWhatsAppImage(
+                                        phoneNumberId,
+                                        chatbot.access_token,
+                                        senderPhone,
+                                        product.image_url,
+                                        product.name
+                                    );
+                                    await logOutgoing(chatbot.id, `[System] Sent image: ${product.name}`, senderPhone);
+                                }
+
+                                // Build response message
+                                let resultMessage = "";
+                                if (productsWithImages.length > 0) {
+                                    resultMessage += `Successfully sent ${productsWithImages.length} product image(s). `;
+                                }
+                                if (productsWithoutImages.length > 0) {
+                                    resultMessage += `Note: ${productsWithoutImages.length} product(s) don't have images yet: ${productsWithoutImages.map(p => p.name).join(', ')}.`;
+                                }
+
+                                output = JSON.stringify({
+                                    success: true,
+                                    message: resultMessage.trim() + " Now politely ask if there's anything else you can help them with."
+                                });
+                            }
+                        } catch (err) {
+                            console.error(`[DEBUG] send_product_images error:`, err);
+                            output = JSON.stringify({
+                                success: false,
+                                error: err.message
+                            });
+                        }
                     }
                 } catch (err) {
                     console.error(`[DEBUG] Tool execution failed (${fnName}):`, err);
@@ -601,6 +678,33 @@ async function sendWhatsAppPDF(phoneId, token, to, link) {
             }
         })
     });
+}
+
+async function sendWhatsAppImage(phoneId, token, to, imageUrl, caption = "") {
+    try {
+        const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                to: to,
+                type: "image",
+                image: {
+                    link: imageUrl,
+                    caption: caption
+                }
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            console.error("[DEBUG] WhatsApp Image Send Error:", JSON.stringify(data.error));
+        } else {
+            console.log(`[DEBUG] WhatsApp Image Sent. ID: ${data.messages?.[0]?.id}`);
+        }
+    } catch (e) {
+        console.error("[DEBUG] WhatsApp Image Fetch Error:", e);
+    }
 }
 
 async function logOutgoing(chatbotId, content, phone) {
