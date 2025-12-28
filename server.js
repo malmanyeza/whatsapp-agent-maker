@@ -440,7 +440,13 @@ ${chatbot.system_instructions || ""}
         const MAX_TOOL_LOOPS = 5; // Safety limit to prevent infinite loops
 
         while (currentMessage?.tool_calls && loopCount < MAX_TOOL_LOOPS) {
-            loopCount++;
+            loo
+            
+            
+            
+            
+            
+            pCount++;
             const toolCalls = currentMessage.tool_calls;
             console.log(`[DEBUG] Tool Loop ${loopCount}: AI requesting ${toolCalls.length} tool(s)`);
 

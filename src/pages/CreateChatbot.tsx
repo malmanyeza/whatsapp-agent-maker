@@ -615,15 +615,7 @@ Always be polite, professional, and helpful..."
           </CardHeader>
 
           <CardContent>
-            <form
-              onSubmit={handleSubmit}
-              onKeyDown={(e) => {
-                // Prevent Enter key from submitting the form unless on final step
-                if (e.key === 'Enter' && currentStep < 4) {
-                  e.preventDefault();
-                }
-              }}
-            >
+            <form onSubmit={handleSubmit}>
               {renderStep()}
 
               <div className="flex justify-between mt-8 pt-6 border-t border-border">
@@ -640,7 +632,9 @@ Always be polite, professional, and helpful..."
                 {currentStep < 4 ? (
                   <Button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       console.log(`[DEBUG] Next button clicked. Current step: ${currentStep} -> ${currentStep + 1}`);
                       setCurrentStep(prev => prev + 1);
                     }}
