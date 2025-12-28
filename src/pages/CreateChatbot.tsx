@@ -606,7 +606,15 @@ Always be polite, professional, and helpful..."
           </CardHeader>
 
           <CardContent>
-            <form onSubmit={handleSubmit}>
+            <form
+              onSubmit={handleSubmit}
+              onKeyDown={(e) => {
+                // Prevent Enter key from submitting the form unless on final step
+                if (e.key === 'Enter' && currentStep < 4) {
+                  e.preventDefault();
+                }
+              }}
+            >
               {renderStep()}
 
               <div className="flex justify-between mt-8 pt-6 border-t border-border">
