@@ -198,14 +198,16 @@ const CreateChatbot = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    console.log(`[DEBUG] handleSubmit called. Current step: ${currentStep}`);
     e.preventDefault();
 
     // CRITICAL: Only allow submission on the final step (step 4)
     if (currentStep < 4) {
-      console.log('[DEBUG] Prevented early submission - not on final step');
+      console.log('[DEBUG] ❌ Prevented early submission - not on final step');
       return;
     }
 
+    console.log('[DEBUG] ✅ Proceeding with form submission on step 4');
     setIsLoading(true);
 
     try {
