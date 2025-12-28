@@ -638,7 +638,10 @@ Always be polite, professional, and helpful..."
                 {currentStep < 4 ? (
                   <Button
                     type="button"
-                    onClick={() => setCurrentStep(prev => prev + 1)}
+                    onClick={() => {
+                      console.log(`[DEBUG] Next button clicked. Current step: ${currentStep} -> ${currentStep + 1}`);
+                      setCurrentStep(prev => prev + 1);
+                    }}
                   >
                     Next
                     <ArrowRight className="h-4 w-4 ml-2" />
