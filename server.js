@@ -156,121 +156,6 @@ async function handleGenerateQuote(args, chatbot, customerPhone) {
     return pdfUrl;
 }
 
-// --- API: Sync WhatsApp Profile ---
-app.post('/api/sync-profile', async (req, res) => {
-    const { chatbotId } = req.body;
-    console.log(`[DEBUG] Syncing Profile for Chatbot: ${chatbotId}`);
-
-    try {
-        // 1. Fetch Chatbot Config
-        const { data: chatbot, error } = await supabase
-            .from('chatbots')
-            .select('*')
-            .eq('id', chatbotId)
-            .single();
-
-        if (error || !chatbot) throw new Error("Chatbot not found");
-
-        const phoneId = chatbot.whatsapp_phone_number_id;
-        const token = chatbot.access_token;
-        const logoUrl = chatbot.logo_url;
-        const description = chatbot.company_description;
-        const companyName = chatbot.company_name;
-
-        const results = {
-            about: "skipped",
-            photo: "skipped",
-            displayName: "skipped"
-        };
-
-        // 2. Update "About" (Status)
-        if (description) {
-            // WhatsApp "About" is limited to 139 chars usually. Truncate if needed.
-            const shortDesc = description.substring(0, 139);
-            const aboutRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/whatsapp_business_profile`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    messaging_product: "whatsapp",
-                    about: shortDesc
-                })
-            });
-            results.about = aboutRes.ok ? "success" : `failed (${await aboutRes.text()})`;
-        }
-
-        // 3. Update Display Name (Submit for Review)
-        if (companyName) {
-            // Note: This often fails if strict verification is required, but it's the standard request.
-            const nameRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}`, { // It's just /PHONE_ID? Or /whatsapp_business_profile?
-                // Docs say POST /PHONE_ID?No, params usually "messaging_product=whatsapp".
-                // Actually, for display name, it is often: POST /PHONE_ID with "name" param? 
-                // Wait, Cloud API: POST /{phone-number-id} -> { "messaging_product": "whatsapp", "display_name": "NAME" }?
-                // Actually it is POST /PHONE_ID, body: { messaging_product: "whatsapp", display_name: "..." } ??
-                // Let's try the safest path for Cloud API.
-                method: 'POST', // Note: This might need to be query params for some versions, but JSON body strictly for v15+
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    messaging_product: "whatsapp",
-                    display_name: companyName
-                })
-            });
-            // If this fails (e.g. 400), it might be "parameter not allowed" or pending review.
-            results.displayName = nameRes.ok ? "submitted" : `failed (${await nameRes.text()})`;
-        }
-
-        // 4. Update Profile Picture (Complex)
-        if (logoUrl) {
-            try {
-                // A. Download Image
-                const imgRes = await fetch(logoUrl);
-                if (!imgRes.ok) throw new Error("Failed to download logo");
-                const imgBuffer = await imgRes.buffer();
-
-                // B. Upload to WhatsApp Media
-                const form = new FormData();
-                form.append('file', imgBuffer, { filename: 'profile.png', contentType: 'image/png' });
-                form.append('messaging_product', 'whatsapp');
-
-                const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/media`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }, // FormData manages Content-Type boundary
-                    body: form
-                });
-
-                if (!uploadRes.ok) throw new Error(`Media Upload Failed: ${await uploadRes.text()}`);
-                const uploadData = await uploadRes.json();
-                const mediaId = uploadData.id; // This ID serves as a handle? Usually yes for Profile Photo.
-
-                // C. Set Profile Photo
-                const photoRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/whatsapp_business_profile`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({
-                        messaging_product: "whatsapp",
-                        profile_picture_url: null, // Not used
-                        profile_picture_handle: mediaId // Using Media ID as handle (often works for simple setups)
-                    })
-                });
-
-                // If "profile_picture_handle" requires Resumable Upload handle, this might fail.
-                // Fallback: Some versions accept just "profile_picture_url" if public? No.
-
-                results.photo = photoRes.ok ? "success" : `failed (${await photoRes.text()})`;
-
-            } catch (err) {
-                console.error("Profile Photo Error:", err);
-                results.photo = `error (${err.message})`;
-            }
-        }
-
-        res.json({ success: true, results });
-
-    } catch (e) {
-        console.error("Sync Profile Error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
-
 // --- Async Message Processor ---
 async function processMessage(message, phoneNumberId, chatbot) {
     try {
@@ -441,11 +326,11 @@ ${chatbot.system_instructions || ""}
 
         while (currentMessage?.tool_calls && loopCount < MAX_TOOL_LOOPS) {
             loo
-            
-            
-            
-            
-            
+
+
+
+
+
             pCount++;
             const toolCalls = currentMessage.tool_calls;
             console.log(`[DEBUG] Tool Loop ${loopCount}: AI requesting ${toolCalls.length} tool(s)`);
