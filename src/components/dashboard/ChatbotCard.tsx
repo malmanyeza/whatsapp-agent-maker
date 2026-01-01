@@ -93,7 +93,7 @@ const ChatbotCard = ({
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="outline" className={statusInfo.className}>
                 <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${status === "connected" ? "bg-success animate-pulse-soft" :
-                    status === "pending" ? "bg-warning" : "bg-destructive"
+                  status === "pending" ? "bg-warning" : "bg-destructive"
                   }`} />
                 {statusInfo.label}
               </Badge>
@@ -191,6 +191,15 @@ const ChatbotCard = ({
                 Start Bot
               </>
             )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => navigate(`/conversations/${id}`)}
+          >
+            <MessageSquare className="h-4 w-4 mr-1" />
+            Chats
           </Button>
           <Button
             variant="outline"

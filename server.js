@@ -156,6 +156,52 @@ async function handleGenerateQuote(args, chatbot, customerPhone) {
     return pdfUrl;
 }
 
+// --- Utility: Find or Create Conversation ---
+async function findOrCreateConversation(chatbotId, customerPhone) {
+    // Look for an active (non-resolved) conversation
+    const { data: existing, error: findError } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('chatbot_id', chatbotId)
+        .eq('customer_phone', customerPhone)
+        .neq('status', 'resolved')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (findError) {
+        console.error('[DEBUG] Error finding conversation:', findError);
+    }
+
+    if (existing) {
+        // Update last_message_at
+        await supabase
+            .from('conversations')
+            .update({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', existing.id);
+        return existing;
+    }
+
+    // Create new conversation
+    const { data: newConvo, error: createError } = await supabase
+        .from('conversations')
+        .insert({
+            chatbot_id: chatbotId,
+            customer_phone: customerPhone,
+            status: 'bot'
+        })
+        .select()
+        .single();
+
+    if (createError) {
+        console.error('[DEBUG] Error creating conversation:', createError);
+        return null;
+    }
+
+    console.log(`[DEBUG] Created new conversation: ${newConvo.id}`);
+    return newConvo;
+}
+
 // --- Async Message Processor ---
 async function processMessage(message, phoneNumberId, chatbot) {
     try {
@@ -168,9 +214,14 @@ async function processMessage(message, phoneNumberId, chatbot) {
         // 0. Mark as Read (Blue Ticks) - UX Enhancement
         markMessageAsRead(phoneNumberId, chatbot.access_token, messageId);
 
-        // 1. Log Incoming to DB (FIRE AND FORGET - Don't await)
+        // 0.5 Find or create conversation
+        const conversation = await findOrCreateConversation(chatbot.id, senderPhone);
+        const conversationId = conversation?.id || null;
+
+        // 1. Log Incoming to DB (with conversation_id)
         supabase.from('messages').insert({
             chatbot_id: chatbot.id,
+            conversation_id: conversationId,
             content: userMessage,
             direction: 'incoming',
             status: 'received',
@@ -178,6 +229,13 @@ async function processMessage(message, phoneNumberId, chatbot) {
         }).then(({ error }) => {
             if (error) console.error("[DEBUG] Background Log Error:", error);
         });
+
+        // 1.5 Check if conversation is being handled by a human agent
+        if (conversation && conversation.status === 'human') {
+            console.log(`[DEBUG] Conversation ${conversationId} is in HUMAN mode. Skipping AI.`);
+            // Don't process with AI - human agent will handle via dashboard
+            return;
+        }
 
         // Context Construction
         const systemContext = `
@@ -276,6 +334,23 @@ ${chatbot.system_instructions || ""}
                             }
                         },
                         required: ["product_names"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "request_human_agent",
+                    description: "Transfer the conversation to a human agent. Use this when the customer explicitly asks to speak with a human, real person, manager, or customer service representative.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            reason: {
+                                type: "string",
+                                description: "Brief reason for the handover request"
+                            }
+                        },
+                        required: ["reason"]
                     }
                 }
             }
@@ -417,6 +492,35 @@ ${chatbot.system_instructions || ""}
                             }
                         } catch (err) {
                             console.error(`[DEBUG] send_product_images error:`, err);
+                            output = JSON.stringify({
+                                success: false,
+                                error: err.message
+                            });
+                        }
+
+                    } else if (fnName === 'request_human_agent') {
+                        console.log(`[DEBUG] Customer requesting human agent. Reason: ${args.reason}`);
+
+                        try {
+                            // Update conversation status to 'human'
+                            if (conversationId) {
+                                await supabase
+                                    .from('conversations')
+                                    .update({
+                                        status: 'human',
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .eq('id', conversationId);
+
+                                console.log(`[DEBUG] Conversation ${conversationId} transferred to human agent`);
+                            }
+
+                            output = JSON.stringify({
+                                success: true,
+                                message: "The conversation has been transferred to a human agent. Please inform the customer that a representative will respond shortly."
+                            });
+                        } catch (err) {
+                            console.error(`[DEBUG] request_human_agent error:`, err);
                             output = JSON.stringify({
                                 success: false,
                                 error: err.message
@@ -744,6 +848,132 @@ app.post('/api/sync-profile', async (req, res) => {
 
     } catch (e) {
         console.error("Sync Profile Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- API: Get Conversations for a Chatbot ---
+app.get('/api/chatbots/:chatbotId/conversations', async (req, res) => {
+    const { chatbotId } = req.params;
+    const { status } = req.query;
+
+    try {
+        let query = supabase
+            .from('conversations')
+            .select('*')
+            .eq('chatbot_id', chatbotId)
+            .order('last_message_at', { ascending: false });
+
+        if (status && status !== 'all') {
+            query = query.eq('status', status);
+        }
+
+        const { data, error } = await query.limit(50);
+
+        if (error) throw error;
+        res.json(data);
+    } catch (e) {
+        console.error("Get Conversations Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- API: Get Single Conversation with Messages ---
+app.get('/api/conversations/:conversationId', async (req, res) => {
+    const { conversationId } = req.params;
+
+    try {
+        // Get conversation
+        const { data: conversation, error: convError } = await supabase
+            .from('conversations')
+            .select('*')
+            .eq('id', conversationId)
+            .single();
+
+        if (convError) throw convError;
+
+        // Get messages
+        const { data: messages, error: msgError } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true });
+
+        if (msgError) throw msgError;
+
+        res.json({ conversation, messages });
+    } catch (e) {
+        console.error("Get Conversation Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- API: Agent Send Message ---
+app.post('/api/conversations/:conversationId/send', async (req, res) => {
+    const { conversationId } = req.params;
+    const { message } = req.body;
+
+    try {
+        // Get conversation details
+        const { data: conversation, error: convError } = await supabase
+            .from('conversations')
+            .select('*, chatbots(*)')
+            .eq('id', conversationId)
+            .single();
+
+        if (convError || !conversation) throw new Error("Conversation not found");
+
+        const chatbot = conversation.chatbots;
+        const customerPhone = conversation.customer_phone;
+        const phoneNumberId = chatbot.whatsapp_phone_number_id;
+        const accessToken = chatbot.access_token;
+
+        // Send message via WhatsApp
+        await sendWhatsAppText(phoneNumberId, accessToken, customerPhone, message);
+
+        // Log to database
+        await supabase.from('messages').insert({
+            chatbot_id: chatbot.id,
+            conversation_id: conversationId,
+            content: message,
+            direction: 'outgoing',
+            status: 'sent',
+            whatsapp_user_phone: customerPhone
+        });
+
+        // Update conversation timestamp
+        await supabase
+            .from('conversations')
+            .update({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', conversationId);
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Agent Send Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- API: Update Conversation Status ---
+app.post('/api/conversations/:conversationId/status', async (req, res) => {
+    const { conversationId } = req.params;
+    const { status } = req.body; // 'bot', 'human', or 'resolved'
+
+    if (!['bot', 'human', 'resolved'].includes(status)) {
+        return res.status(400).json({ error: "Invalid status. Must be 'bot', 'human', or 'resolved'" });
+    }
+
+    try {
+        const { error } = await supabase
+            .from('conversations')
+            .update({ status, updated_at: new Date().toISOString() })
+            .eq('id', conversationId);
+
+        if (error) throw error;
+
+        res.json({ success: true, status });
+    } catch (e) {
+        console.error("Update Status Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
