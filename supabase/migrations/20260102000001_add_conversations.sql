@@ -9,10 +9,13 @@ CREATE TABLE public.conversations (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     last_message_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-    CONSTRAINT conversations_pkey PRIMARY KEY (id),
-    CONSTRAINT conversations_unique_active UNIQUE (chatbot_id, customer_phone, status) 
-        WHERE status != 'resolved'
+    CONSTRAINT conversations_pkey PRIMARY KEY (id)
 );
+
+-- Create partial unique index for active conversations (only one non-resolved per customer+chatbot)
+CREATE UNIQUE INDEX idx_conversations_unique_active 
+    ON public.conversations(chatbot_id, customer_phone) 
+    WHERE status != 'resolved';
 
 -- Create index for fast lookups
 CREATE INDEX idx_conversations_chatbot_status ON public.conversations(chatbot_id, status);
