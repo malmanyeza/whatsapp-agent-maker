@@ -580,7 +580,7 @@ ${chatbot.system_instructions || ""}
                 if (currentMessage?.content) {
                     console.log(`[DEBUG] Final Reply (after ${loopCount} loop(s)): "${currentMessage.content}"`);
                     await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, currentMessage.content);
-                    await logOutgoing(chatbot.id, currentMessage.content, senderPhone);
+                    await logOutgoing(chatbot.id, currentMessage.content, senderPhone, conversationId);
                     break; // Exit the loop
                 } else if (currentMessage?.tool_calls) {
                     console.log(`[DEBUG] AI wants to call ${currentMessage.tool_calls.length} more tool(s)...`);
@@ -605,7 +605,7 @@ ${chatbot.system_instructions || ""}
         if (!choice.message?.tool_calls && reply) {
             console.log(`[DEBUG] Direct Reply: "${reply}"`);
             await sendWhatsAppText(phoneNumberId, chatbot.access_token, senderPhone, reply);
-            await logOutgoing(chatbot.id, reply, senderPhone);
+            await logOutgoing(chatbot.id, reply, senderPhone, conversationId);
         }
 
     } catch (e) {
@@ -696,9 +696,10 @@ async function sendWhatsAppImage(phoneId, token, to, imageUrl, caption = "") {
     }
 }
 
-async function logOutgoing(chatbotId, content, phone) {
+async function logOutgoing(chatbotId, content, phone, conversationId = null) {
     await supabase.from('messages').insert({
         chatbot_id: chatbotId,
+        conversation_id: conversationId,
         content: content,
         direction: 'outgoing',
         status: 'sent',
