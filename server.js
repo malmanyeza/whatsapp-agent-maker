@@ -426,7 +426,7 @@ ${chatbot.system_instructions || ""}
 
                         // Send PDF immediately
                         await sendWhatsAppPDF(phoneNumberId, chatbot.access_token, senderPhone, pdfUrl);
-                        await logOutgoing(chatbot.id, `[System] Generated Quote: ${pdfUrl}`, senderPhone);
+                        await logOutgoing(chatbot.id, `[System] Generated Quote: ${pdfUrl}`, senderPhone, conversationId);
 
                         // Tool Output for AI - Don't mention the URL, just confirm and offer help
                         output = JSON.stringify({
@@ -473,7 +473,7 @@ ${chatbot.system_instructions || ""}
                                         product.image_url,
                                         product.name
                                     );
-                                    await logOutgoing(chatbot.id, `[System] Sent image: ${product.name}`, senderPhone);
+                                    await logOutgoing(chatbot.id, `[System] Sent image: ${product.name}`, senderPhone, conversationId);
                                 }
 
                                 // Build response message
