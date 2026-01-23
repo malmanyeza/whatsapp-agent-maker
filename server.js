@@ -353,6 +353,32 @@ ${chatbot.system_instructions || ""}
                         required: ["reason"]
                     }
                 }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "notify_customer_service",
+                    description: "Send a notification to the customer service team when a customer needs human attention. Use this when you tell the customer that someone will contact them, or when they need help beyond your capabilities.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            reason: {
+                                type: "string",
+                                description: "Brief reason why the customer needs attention"
+                            },
+                            customer_name: {
+                                type: "string",
+                                description: "Customer's name if known"
+                            },
+                            urgency: {
+                                type: "string",
+                                enum: ["low", "medium", "high"],
+                                description: "Urgency level of the request"
+                            }
+                        },
+                        required: ["reason"]
+                    }
+                }
             }
         ];
 
@@ -521,6 +547,50 @@ ${chatbot.system_instructions || ""}
                             });
                         } catch (err) {
                             console.error(`[DEBUG] request_human_agent error:`, err);
+                            output = JSON.stringify({
+                                success: false,
+                                error: err.message
+                            });
+                        }
+
+                    } else if (fnName === 'notify_customer_service') {
+                        console.log(`[DEBUG] Notifying customer service team. Reason: ${args.reason}`);
+
+                        try {
+                            // Get customer service contacts from chatbot settings
+                            const contacts = chatbot.customer_service_contacts || [];
+
+                            if (contacts.length === 0) {
+                                console.log(`[DEBUG] No customer service contacts configured`);
+                                output = JSON.stringify({
+                                    success: false,
+                                    message: "No customer service contacts configured. Please add team members in the dashboard."
+                                });
+                            } else {
+                                // Build notification message
+                                const urgencyEmoji = args.urgency === 'high' ? '🔴' : args.urgency === 'medium' ? '🟡' : '🟢';
+                                const customerName = args.customer_name ? `(${args.customer_name})` : '';
+                                const notificationMessage = `${urgencyEmoji} *Customer Service Alert*\n\n📞 Customer: ${senderPhone} ${customerName}\n📝 Reason: ${args.reason}\n\nPlease reach out to assist them.`;
+
+                                // Send message to each team member
+                                let sentCount = 0;
+                                for (const contact of contacts) {
+                                    try {
+                                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, contact.phone, notificationMessage);
+                                        console.log(`[DEBUG] Notified ${contact.name} (${contact.phone})`);
+                                        sentCount++;
+                                    } catch (sendErr) {
+                                        console.error(`[DEBUG] Failed to notify ${contact.name}:`, sendErr.message);
+                                    }
+                                }
+
+                                output = JSON.stringify({
+                                    success: true,
+                                    message: `Notification sent to ${sentCount} team member(s). The customer has been informed that help is on the way.`
+                                });
+                            }
+                        } catch (err) {
+                            console.error(`[DEBUG] notify_customer_service error:`, err);
                             output = JSON.stringify({
                                 success: false,
                                 error: err.message

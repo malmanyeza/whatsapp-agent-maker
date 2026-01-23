@@ -23,6 +23,7 @@ export interface Chatbot {
     generateQuotations: boolean;
     collectLeads: boolean;
   };
+  customer_service_contacts?: { name: string; phone: string }[];
   status: "connected" | "disconnected" | "pending";
   created_at: string;
   updated_at: string;
@@ -46,6 +47,7 @@ export interface CreateChatbotData {
     generateQuotations: boolean;
     collectLeads: boolean;
   };
+  customer_service_contacts?: { name: string; phone: string }[];
 }
 
 export const useChatbots = () => {

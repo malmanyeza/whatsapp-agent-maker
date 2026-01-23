@@ -22,9 +22,17 @@ import {
   Eye,
   EyeOff,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Plus,
+  Trash2,
+  Users
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+
+interface CustomerServiceContact {
+  name: string;
+  phone: string;
+}
 
 const CreateChatbot = () => {
   const navigate = useNavigate();
@@ -37,6 +45,7 @@ const CreateChatbot = () => {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [currentStep, setCurrentStep] = useState(1);
   const isEditing = !!id;
+  const [customerServiceContacts, setCustomerServiceContacts] = useState<CustomerServiceContact[]>([]);
 
   const [formData, setFormData] = useState({
     company_name: "",
@@ -88,6 +97,10 @@ const CreateChatbot = () => {
               tone: chatbot.tone,
               allowed_actions: chatbot.allowed_actions,
             });
+            // Load customer service contacts
+            if (chatbot.customer_service_contacts) {
+              setCustomerServiceContacts(chatbot.customer_service_contacts as CustomerServiceContact[]);
+            }
           } else {
             toast({
               title: "Chatbot not found",
@@ -127,6 +140,21 @@ const CreateChatbot = () => {
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
+  };
+
+  // Customer Service Contacts Management
+  const addContact = () => {
+    setCustomerServiceContacts(prev => [...prev, { name: "", phone: "" }]);
+  };
+
+  const removeContact = (index: number) => {
+    setCustomerServiceContacts(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateContact = (index: number, field: "name" | "phone", value: string) => {
+    setCustomerServiceContacts(prev =>
+      prev.map((contact, i) => i === index ? { ...contact, [field]: value } : contact)
+    );
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,11 +238,19 @@ const CreateChatbot = () => {
     console.log('[DEBUG] ✅ Proceeding with form submission on step 4');
     setIsLoading(true);
 
+    // Filter out empty contacts
+    const validContacts = customerServiceContacts.filter(c => c.name && c.phone);
+
     try {
+      const dataToSave = {
+        ...formData,
+        customer_service_contacts: validContacts
+      };
+
       if (isEditing) {
-        await updateChatbot.mutateAsync({ id, ...formData });
+        await updateChatbot.mutateAsync({ id, ...dataToSave });
       } else {
-        await createChatbot.mutateAsync(formData as CreateChatbotData);
+        await createChatbot.mutateAsync(dataToSave as CreateChatbotData);
       }
       navigate("/dashboard");
     } catch (error) {
@@ -516,6 +552,58 @@ Always be polite, professional, and helpful..."
                   Collect Leads
                 </Label>
               </div>
+            </div>
+
+            {/* Customer Service Team */}
+            <div className="space-y-4 pt-6 border-t">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Customer Service Team
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Team members will receive WhatsApp alerts when customers need human assistance
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addContact}>
+                  <Plus className="h-4 w-4 mr-1" /> Add Member
+                </Button>
+              </div>
+
+              {customerServiceContacts.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic p-4 bg-muted/50 rounded-lg text-center">
+                  No team members added yet. Click "Add Member" to add customer service contacts.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {customerServiceContacts.map((contact, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Input
+                        placeholder="Name (e.g., Taku)"
+                        value={contact.name}
+                        onChange={(e) => updateContact(index, "name", e.target.value)}
+                        className="flex-1"
+                      />
+                      <Input
+                        placeholder="Phone (e.g., 263771234567)"
+                        value={contact.phone}
+                        onChange={(e) => updateContact(index, "phone", e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeContact(index)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );
