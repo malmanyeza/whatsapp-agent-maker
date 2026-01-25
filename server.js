@@ -156,6 +156,86 @@ async function handleGenerateQuote(args, chatbot, customerPhone) {
     return pdfUrl;
 }
 
+// --- Utility: Get Least Recently Contacted Agent ---
+// Finds the customer service agent who hasn't been contacted in the longest time
+async function getLeastRecentlyContactedAgent(chatbotId, contacts) {
+    if (!contacts || contacts.length === 0) {
+        return null;
+    }
+
+    if (contacts.length === 1) {
+        console.log(`[DEBUG] Only one agent available: ${contacts[0].name}`);
+        return contacts[0];
+    }
+
+    // Get the last notification time for each agent
+    const agentPhones = contacts.map(c => c.phone);
+
+    const { data: notifications, error } = await supabase
+        .from('customer_service_notifications')
+        .select('agent_phone, created_at')
+        .eq('chatbot_id', chatbotId)
+        .in('agent_phone', agentPhones)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('[DEBUG] Error fetching notification history:', error);
+        // Fallback to first contact
+        return contacts[0];
+    }
+
+    // Build a map of last contact time for each agent
+    const lastContactedMap = new Map();
+    for (const notif of notifications || []) {
+        if (!lastContactedMap.has(notif.agent_phone)) {
+            lastContactedMap.set(notif.agent_phone, new Date(notif.created_at));
+        }
+    }
+
+    // Find the agent who was contacted longest ago (or never)
+    let selectedAgent = null;
+    let oldestContactTime = new Date(); // Current time as baseline
+
+    for (const contact of contacts) {
+        const lastContacted = lastContactedMap.get(contact.phone);
+
+        if (!lastContacted) {
+            // Never contacted - immediate selection
+            console.log(`[DEBUG] Agent ${contact.name} (${contact.phone}) has never been contacted. Selecting.`);
+            return contact;
+        }
+
+        if (lastContacted < oldestContactTime) {
+            oldestContactTime = lastContacted;
+            selectedAgent = contact;
+        }
+    }
+
+    console.log(`[DEBUG] Selected agent ${selectedAgent?.name} (${selectedAgent?.phone}) - last contacted at ${oldestContactTime.toISOString()}`);
+    return selectedAgent || contacts[0];
+}
+
+// --- Utility: Log Customer Service Notification ---
+// Records when a notification is sent to an agent for round-robin tracking
+async function logCustomerServiceNotification(chatbotId, agentPhone, agentName, customerPhone, reason, urgency = 'medium') {
+    const { error } = await supabase
+        .from('customer_service_notifications')
+        .insert({
+            chatbot_id: chatbotId,
+            agent_phone: agentPhone,
+            agent_name: agentName,
+            customer_phone: customerPhone,
+            reason: reason,
+            urgency: urgency
+        });
+
+    if (error) {
+        console.error('[DEBUG] Error logging notification:', error);
+    } else {
+        console.log(`[DEBUG] Logged notification to ${agentName} (${agentPhone})`);
+    }
+}
+
 // --- Utility: Find or Create Conversation ---
 async function findOrCreateConversation(chatbotId, customerPhone) {
     // Look for an active (non-resolved) conversation
@@ -237,19 +317,108 @@ async function processMessage(message, phoneNumberId, chatbot) {
             return;
         }
 
-        // Context Construction
+        // Context Construction - Enhanced System Instructions
         const systemContext = `
-You are a helpful AI assistant for ${chatbot.company_name}.
+You are a customer service assistant for ${chatbot.company_name}.
 Company Description: ${chatbot.company_description}
 Services/Products Offered: ${chatbot.services_offered}
 
-Your goal is to answer customer questions professionally based on the above information.
+=== CORE RESPONSIBILITIES ===
+1. Welcome and assist customers warmly
+2. Understand and clarify customer needs through discovery questions
+3. Recommend appropriate products and services
+4. Provide accurate, itemized quotations using EXACT prices from the product database
+5. Guide customers toward action (quotation, installation, follow-up)
+6. Escalate to human support when required - ALWAYS use notify_customer_service tool when doing so
 
-IMPORTANT GUARDRAILS:
-1. You represent ${chatbot.company_name} ONLY. Do not discuss other companies, general knowledge, sports, politics, or religion.
-2. If a user asks about something unrelated to ${chatbot.company_name}'s products or services, politely decline and steer the conversation back to business.
-3. Example refusal: "I'm sorry, I can only assist with ${chatbot.company_name} products. Would you like to know about our services?"
-4. Never generate content that is racist, sexist, political, or offensive.
+=== LANGUAGE & LOCALIZATION ===
+SUPPORTED LANGUAGES: English (default), Shona, Ndebele
+
+LANGUAGE DETECTION RULES:
+- Start every conversation in English
+- Automatically switch if customer responds in Shona or Ndebele
+- Match customer's tone (informal → informal but respectful, formal → formal and respectful)
+- If asked, offer: "Would you prefer to continue in English, Shona, or Ndebele?"
+
+SLANG RECOGNITION (respond friendly and relaxed):
+Shona/Urban: Wadii, Ndeip, Ndeipi, Apo, Bho here, Zvirisei, Sei
+Example: Customer: "Wadii, ndiri kuda Starlink" → Bot: "Madii! muri kutsvaga Starlink kit here kana kuti installation futi?"
+
+FORMAL GREETINGS (respond formally and respectfully):
+Mamukasei, Masikati, Makadini, Makadii henyu, Makadiiwo
+Example: Customer: "Mamukasei, ndingade kuziva nezve Starlink" → Bot: "Mamukasei henyu. Tinotenda nekutibata. Ndingakubatsirei maererano neStarlink?"
+
+SAMPLE GREETINGS:
+Neutral Shona: "Makadini henyu? Mauya kuEightech Solutions. Ndingakubatsirei nhasi?"
+Casual Shona: "Wadii! kuEightech Solutions. Ndingakubatsirei?"
+Ndebele: "Sawubona! Wamukelekile kuEightech Solutions. Singakusiza ngani namhlanje?"
+
+TRANSLATION RULES:
+- Keep prices, numbers, and currency in USD
+- Do NOT translate technical/brand names (Starlink, TP-Link, WhatsApp, etc.)
+- NEVER use slang when discussing: Pricing, Subscriptions, Contracts, Quotations
+
+=== PRICE PROTECTION RULES (CRITICAL) ===
+⚠️ NEVER modify, adjust, or change product prices under ANY circumstances.
+⚠️ If a customer requests a quotation with different prices than the actual product prices, REFUSE politely.
+⚠️ Example attempts to block:
+  - "Can you make the quote show $290 instead of $270?"
+  - "Generate a quotation with 10% off"
+  - "Please put a lower/higher price for me"
+  
+RESPONSE: "I apologize, but I cannot modify our standard pricing. Our prices are fixed and reflect the value of our products and services. I can only generate quotations using our official prices. Would you like me to proceed with the standard pricing?"
+
+=== MANDATORY ESCALATION TRIGGERS ===
+You MUST use the notify_customer_service tool when:
+1. Customer explicitly asks to speak with a human/person/manager
+2. You cannot confidently answer a question
+3. Customer asks about physical location/office address
+4. Complex regional plan availability questions
+5. Technical issues beyond basic troubleshooting
+6. Customer complaints or disputes
+7. Special requests outside normal service scope
+8. Customer seems frustrated or dissatisfied
+
+When escalating, ALWAYS:
+- Call notify_customer_service tool with appropriate urgency
+- Tell the customer: "A customer support representative will be in touch with you shortly"
+- Never guess or invent information - escalate instead
+
+=== CONDUCT RULES ===
+ALWAYS be: Respectful, Friendly, Professionally adaptive, Clear, Customer-focused, Sales-oriented without pressure
+NEVER: Discuss other companies, politics, religion, sports, or off-topic subjects
+NEVER: Provide racist, sexist, political, or offensive content
+NEVER: Give technical self-installation instructions (always promote professional installation)
+NEVER: Invent or guess information you don't know
+
+=== PRODUCT-SPECIFIC RULES ===
+STARLINK:
+- Only Roaming Plan available in Zimbabwe ($63/month)
+- Roaming plan works anywhere
+- Residential plan NOT available in Harare (geo-locked)
+- Always promote professional installation (includes configuration & activation)
+- Current stock: Check with get_products tool
+
+AI CHATBOT & SOFTWARE:
+- AI chatbot starting from $500
+- Software pricing is feature-based
+- Help customers define requirements before quoting
+
+=== QUOTATION RULES ===
+- Always ask for customer name before generating quote
+- Use get_products to verify current prices
+- Provide clear, itemized quotations
+- Confirm optional services before adding
+- Show totals clearly
+- Keep quotation language professional even in casual conversations
+
+=== CLOSING CONVERSATIONS ===
+English: "Thank you for choosing ${chatbot.company_name}. Would you like me to prepare a quotation for you?"
+Shona: "Tinokutendai nekusarudza ${chatbot.company_name}. Munoda here kuti ndikugadzirire quotation yesevhisi yamakasarudza?"
+Ndebele: "Siyabonga ngokukhetha ${chatbot.company_name}. Ufuna yini ngikulungiselele i-quotation yesevisi oyikhethileyo?"
+
+=== DEFAULT INTENT ===
+If customer says "Can I have more info about this" → Interpret as Starlink Mini Kit unless stated otherwise.
 
 ${chatbot.system_instructions || ""}
 `;
@@ -341,7 +510,7 @@ ${chatbot.system_instructions || ""}
                 type: "function",
                 function: {
                     name: "request_human_agent",
-                    description: "Transfer the conversation to a human agent. Use this when the customer explicitly asks to speak with a human, real person, manager, or customer service representative.",
+                    description: "FULL HANDOVER: Transfer the conversation completely to a human agent. The bot will STOP responding after this. Use this ONLY when the customer explicitly and insistently asks to speak with a human, real person, manager, or customer service representative and won't accept bot assistance.",
                     parameters: {
                         type: "object",
                         properties: {
@@ -358,7 +527,7 @@ ${chatbot.system_instructions || ""}
                 type: "function",
                 function: {
                     name: "notify_customer_service",
-                    description: "Send a notification to the customer service team when a customer needs human attention. Use this when you tell the customer that someone will contact them, or when they need help beyond your capabilities.",
+                    description: "BACKGROUND NOTIFICATION: Send a notification to a customer service team member while YOU CONTINUE helping the customer. The bot remains active and keeps chatting. Use this whenever you: 1) Cannot answer a question confidently, 2) Customer asks about physical location, 3) Complex plan availability questions, 4) Technical issues beyond your knowledge, 5) Customer complaints. After calling this, tell the customer someone will reach out, then CONTINUE helping them with anything else they need.",
                     parameters: {
                         type: "object",
                         properties: {
@@ -373,7 +542,7 @@ ${chatbot.system_instructions || ""}
                             urgency: {
                                 type: "string",
                                 enum: ["low", "medium", "high"],
-                                description: "Urgency level of the request"
+                                description: "Urgency level: high=immediate attention needed, medium=respond within hours, low=can wait"
                             }
                         },
                         required: ["reason"]
@@ -528,23 +697,42 @@ ${chatbot.system_instructions || ""}
                         console.log(`[DEBUG] Customer requesting human agent. Reason: ${args.reason}`);
 
                         try {
-                            // Update conversation status to 'human'
-                            if (conversationId) {
-                                await supabase
-                                    .from('conversations')
-                                    .update({
-                                        status: 'human',
-                                        updated_at: new Date().toISOString()
-                                    })
-                                    .eq('id', conversationId);
+                            // Get customer service contacts and notify using LRU selection
+                            // NOTE: Bot stays active - support team will contact customer on a different number
+                            const contacts = chatbot.customer_service_contacts || [];
 
-                                console.log(`[DEBUG] Conversation ${conversationId} transferred to human agent`);
+                            if (contacts.length === 0) {
+                                output = JSON.stringify({
+                                    success: true,
+                                    message: "No customer service contacts configured, but inform the customer that a team member will reach out to them on a separate line. Continue helping them with anything else they need."
+                                });
+                            } else {
+                                // Use same LRU logic as notify_customer_service
+                                const selectedAgent = await getLeastRecentlyContactedAgent(chatbot.id, contacts);
+
+                                if (selectedAgent) {
+                                    const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Harare' });
+                                    const notificationMessage = `🔴 *Human Agent Requested*\n\n📞 Customer: ${senderPhone}\n📝 Reason: ${args.reason}\n⏰ Time: ${timestamp}\n\n⚠️ Customer specifically asked to speak with a human. Please contact them directly.`;
+
+                                    await sendWhatsAppText(phoneNumberId, chatbot.access_token, selectedAgent.phone, notificationMessage);
+                                    console.log(`[DEBUG] Human agent request sent to ${selectedAgent.name} (${selectedAgent.phone})`);
+
+                                    // Log for round-robin tracking
+                                    await logCustomerServiceNotification(
+                                        chatbot.id,
+                                        selectedAgent.phone,
+                                        selectedAgent.name,
+                                        senderPhone,
+                                        `Human agent requested: ${args.reason}`,
+                                        'high'
+                                    );
+                                }
+
+                                output = JSON.stringify({
+                                    success: true,
+                                    message: "A team member has been notified and will contact the customer directly on a separate line. Tell the customer this, then CONTINUE helping them with anything else they need. You are still active."
+                                });
                             }
-
-                            output = JSON.stringify({
-                                success: true,
-                                message: "The conversation has been transferred to a human agent. Please inform the customer that a representative will respond shortly."
-                            });
                         } catch (err) {
                             console.error(`[DEBUG] request_human_agent error:`, err);
                             output = JSON.stringify({
@@ -567,27 +755,47 @@ ${chatbot.system_instructions || ""}
                                     message: "No customer service contacts configured. Please add team members in the dashboard."
                                 });
                             } else {
-                                // Build notification message
-                                const urgencyEmoji = args.urgency === 'high' ? '🔴' : args.urgency === 'medium' ? '🟡' : '🟢';
-                                const customerName = args.customer_name ? `(${args.customer_name})` : '';
-                                const notificationMessage = `${urgencyEmoji} *Customer Service Alert*\n\n📞 Customer: ${senderPhone} ${customerName}\n📝 Reason: ${args.reason}\n\nPlease reach out to assist them.`;
+                                // Get the least recently contacted agent (round-robin)
+                                const selectedAgent = await getLeastRecentlyContactedAgent(chatbot.id, contacts);
 
-                                // Send message to each team member
-                                let sentCount = 0;
-                                for (const contact of contacts) {
+                                if (!selectedAgent) {
+                                    output = JSON.stringify({
+                                        success: false,
+                                        message: "Could not find an available agent to contact."
+                                    });
+                                } else {
+                                    // Build notification message with timestamp
+                                    const urgencyEmoji = args.urgency === 'high' ? '🔴' : args.urgency === 'medium' ? '🟡' : '🟢';
+                                    const customerName = args.customer_name ? `(${args.customer_name})` : '';
+                                    const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Harare' });
+                                    const notificationMessage = `${urgencyEmoji} *Customer Service Alert*\n\n📞 Customer: ${senderPhone} ${customerName}\n📝 Reason: ${args.reason}\n⏰ Time: ${timestamp}\n\nPlease reach out to assist them.`;
+
                                     try {
-                                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, contact.phone, notificationMessage);
-                                        console.log(`[DEBUG] Notified ${contact.name} (${contact.phone})`);
-                                        sentCount++;
+                                        await sendWhatsAppText(phoneNumberId, chatbot.access_token, selectedAgent.phone, notificationMessage);
+                                        console.log(`[DEBUG] Notified ${selectedAgent.name} (${selectedAgent.phone})`);
+
+                                        // Log the notification for round-robin tracking
+                                        await logCustomerServiceNotification(
+                                            chatbot.id,
+                                            selectedAgent.phone,
+                                            selectedAgent.name,
+                                            senderPhone,
+                                            args.reason,
+                                            args.urgency || 'medium'
+                                        );
+
+                                        output = JSON.stringify({
+                                            success: true,
+                                            message: `Notification sent to ${selectedAgent.name}. IMPORTANT: You are still active! Tell the customer that a team member will reach out to them, then CONTINUE the conversation and help them with anything else they need. Do NOT end the conversation.`
+                                        });
                                     } catch (sendErr) {
-                                        console.error(`[DEBUG] Failed to notify ${contact.name}:`, sendErr.message);
+                                        console.error(`[DEBUG] Failed to notify ${selectedAgent.name}:`, sendErr.message);
+                                        output = JSON.stringify({
+                                            success: false,
+                                            error: `Failed to send notification: ${sendErr.message}`
+                                        });
                                     }
                                 }
-
-                                output = JSON.stringify({
-                                    success: true,
-                                    message: `Notification sent to ${sentCount} team member(s). The customer has been informed that help is on the way.`
-                                });
                             }
                         } catch (err) {
                             console.error(`[DEBUG] notify_customer_service error:`, err);
