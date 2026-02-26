@@ -1,74 +1,67 @@
-# Welcome to your Lovable project
+# WhatsApp Agent Maker (AI Customer Support Automation)
 
-## Project info
+A configurable system that helps businesses spin up WhatsApp-based customer support agents powered by AI. Organizations can provide their business context (FAQs, products/services, pricing rules) and the agent responds in natural language, answers FAQs, and can generate quotations based on customer needs.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Why this exists
+Many businesses want WhatsApp customer support that:
+- replies instantly
+- stays consistent with company policy
+- can handle FAQs + product inquiries
+- can generate quotations (not just chat)
 
-## How can I edit this code?
+This project turns that into a reusable system.
 
-There are several ways of editing your application.
+---
 
-**Use Lovable**
+## Key Features
+- ✅ Organization-specific context (FAQs, policies, products/services)
+- ✅ Natural language customer support responses
+- ✅ FAQ automation
+- ✅ Quotation generation from structured product/service info
+- ✅ Conversation flow handling + edge-case protection
+- ✅ Admin-friendly setup flow (configure once, run continuously)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+---
 
-Changes made via Lovable will be committed automatically to this repo.
+## Tech Stack
+- **TypeScript / JavaScript**
+- **Node.js** (backend services / orchestration)
+- **API integrations** (WhatsApp provider + AI provider)
+- **PostgreSQL / Supabase** (optional, if used for persistence)
 
-**Use your preferred IDE**
+---
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## System Overview (High Level)
+1. Business owner configures organization details + knowledge base
+2. Incoming WhatsApp messages are received by the server/webhook
+3. The system loads the correct org context + chat history
+4. The AI generates a response or quotation payload
+5. Response is sent back to the user via WhatsApp API
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+---
 
-Follow these steps:
+## Getting Started (Local)
+### Prerequisites
+- Node.js (LTS)
+- npm / pnpm / yarn
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Setup
+1) Clone and install:
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+git clone https://github.com/malmanyeza/whatsapp-agent-maker.git
+cd whatsapp-agent-maker
+cp .env.example .env
 
-# Step 3: Install the necessary dependencies.
-npm i
+# WhatsApp Provider
+WHATSAPP_WEBHOOK_SECRET=your_secret
+WHATSAPP_API_TOKEN=your_token
+WHATSAPP_PHONE_NUMBER_ID=your_id
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+# AI Provider
+AI_API_KEY=your_key
+AI_MODEL=your_model_name
 
-**Edit a file directly in GitHub**
+# Optional: Database
+DATABASE_URL=postgres_connection_string
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
-"# whatsapp-agent-maker" 
+npm install
