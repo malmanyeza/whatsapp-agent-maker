@@ -65,3 +65,7 @@ AI_MODEL=your_model_name
 DATABASE_URL=postgres_connection_string
 
 npm install
+<img width="1730" height="837" alt="Screenshot 2026-02-26 113433" src="https://github.com/user-attachments/assets/30257ac0-4f24-4e3a-abbd-8f75f713e6a3" />
+<img width="1915" height="866" alt="Screenshot 2026-02-26 121121" src="https://github.com/user-attachments/assets/e38abbdb-0805-42d3-9770-fd6f10669c2e" />
+<img width="1898" height="868" alt="Screenshot 2026-02-26 121438" src="https://github.com/user-attachments/assets/5d894ac2-37c4-4774-ba48-33c9cbe447da" />
+<img width="1897" height="861" alt="Screenshot 2026-02-26 121540" src="https://github.com/user-attachments/assets/c218af2c-da1d-4064-ac51-2537aef2a3f0" />
